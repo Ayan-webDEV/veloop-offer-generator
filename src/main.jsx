@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
-// import fontkit from "@pdf-lib/fontkit";
+import fontkit from "@pdf-lib/fontkit";
 import "./styles.css";
 
 const IST = "Asia/Kolkata";
@@ -259,10 +259,54 @@ async function buildPdf(data) {
 
   const pdf = await PDFDocument.load(templateBytes);
 
+  /*
+   * ============================================================
+   * REGISTER FONTKIT
+   * ============================================================
+   *
+   * Required for embedding custom TTF fonts.
+   */
+  pdf.registerFontkit(fontkit);
+
+  /*
+   * ============================================================
+   * EXISTING PDF FONTS
+   * ============================================================
+   *
+   * Helvetica is used for the existing template text.
+   */
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
+  /*
+   * ============================================================
+   * UNICODE FONT
+   * ============================================================
+   *
+   * Noto Sans is used for the stipend because the standard
+   * Helvetica/WinAnsi fonts cannot encode the ₹ symbol.
+   *
+   * File required:
+   *
+   * public/
+   * └── fonts/
+   *     └── NotoSans-Regular.ttf
+   */
+  const notoSansBytes = await fetch("/fonts/NotoSans-Regular.ttf").then((r) =>
+    r.arrayBuffer(),
+  );
+
+  const notoSans = await pdf.embedFont(notoSansBytes, {
+    subset: true,
+  });
+
   const page = pdf.getPages()[0];
+
+  /*
+   * ============================================================
+   * DYNAMIC DATA
+   * ============================================================
+   */
 
   const name = (data.name || "INTERN NAME").trim().toUpperCase();
 
@@ -271,26 +315,28 @@ async function buildPdf(data) {
   const internId = data.internId || "VLRINT20260001";
 
   const issue = formatDateInput(data.issueDate);
+
   const start = formatDateInput(data.startDate);
 
   const duration = data.duration || "1 Month";
+
   const mode = data.mode || "Remote";
+
+  /*
+   * Stipend
+   *
+   * Default:
+   * Performance Based — Up to ₹5,000
+   */
+  const stipend = data.stipend || "Performance Based — Up to ₹5,000";
 
   /*
    * ============================================================
    * FIRST OPENING LINE
    * ============================================================
    *
-   * The supplied PDF already contains the following lines:
-   *
-   * VELOOP REWARDS. We were impressed...
-   * we believe you will be...
-   *
-   * Therefore we only generate the missing FIRST line.
-   *
-   * IMPORTANT:
-   * The dynamic position starts AFTER the measured width of
-   * the complete prefix. It is NOT hard-coded to x=279 anymore.
+   * The supplied PDF already contains the remaining opening
+   * lines, so only the first dynamic line is generated here.
    */
 
   const firstLineSize = fitFirstLine(regular, bold, position);
@@ -300,32 +346,33 @@ async function buildPdf(data) {
   const suffix = " at";
 
   const x = 48;
+
   const top = 300.53;
 
   /*
-   * Calculate exactly where the word after "of" should start.
-   *
-   * +7 gives the visual spacing required because Helvetica's
-   * metrics are slightly different from the font used in the
-   * original template.
+   * Calculate exactly where the dynamic position starts.
    */
+
   const prefixWidth = regular.widthOfTextAtSize(prefix, firstLineSize);
 
   const positionX = x + prefixWidth + 7;
 
   /*
-   * Draw the normal opening text.
+   * Draw normal opening text.
    */
+
   drawTextTop(page, prefix, x, top, regular, firstLineSize);
 
   /*
-   * Draw the dynamic position in bold.
+   * Draw dynamic position in bold.
    */
+
   drawTextTop(page, position, positionX, top, bold, firstLineSize);
 
   /*
    * Draw " at" immediately after the dynamic position.
    */
+
   const positionWidth = bold.widthOfTextAtSize(position, firstLineSize);
 
   drawTextTop(
@@ -386,6 +433,7 @@ async function buildPdf(data) {
   /*
    * Position
    */
+
   cover(page, 224, 437, 335, 20);
 
   drawTextTop(page, position, 227.21, 440.59, regular, 12);
@@ -393,6 +441,7 @@ async function buildPdf(data) {
   /*
    * Start Date
    */
+
   cover(page, 224, 463, 335, 20);
 
   drawTextTop(page, start, 227.21, 466.03, regular, 12);
@@ -400,6 +449,7 @@ async function buildPdf(data) {
   /*
    * Duration
    */
+
   cover(page, 224, 489, 335, 20);
 
   drawTextTop(page, duration, 227.21, 492.31, bold, 12);
@@ -407,17 +457,35 @@ async function buildPdf(data) {
   /*
    * Mode
    */
+
   cover(page, 224, 515, 335, 20);
 
   drawTextTop(page, mode, 227.21, 518.59, bold, 12);
 
   /*
-   * Stipend
-   * Fixed as UnPaid.
+   * ============================================================
+   * STIPEND
+   * ============================================================
+   *
+   * IMPORTANT:
+   *
+   * Do NOT use Helvetica/HelveticaBold here because the ₹
+   * character is not supported by WinAnsi.
+   *
+   * The entire stipend value is rendered using Noto Sans.
    */
+
   cover(page, 224, 541, 335, 20);
 
-  drawTextTop(page, "UnPaid", 227.21, 544.78, bold, 11.04);
+  const stipendValue = data.stipend || "Performance Based — Up to ₹5,000";
+
+  const stipendX = 227.21;
+
+  const stipendY = 544.78;
+
+  const stipendSize = 11.04;
+
+  drawTextTop(page, stipendValue, stipendX, stipendY, notoSans, stipendSize);
 
   /*
    * ============================================================
@@ -461,6 +529,7 @@ function App() {
     startDate: todayISTISO(),
     duration: "1 Month",
     mode: "Remote",
+    stipend: "Performance Based — Up to ₹5,000",
     internId: "",
     subject: DEFAULT_EMAIL_SUBJECT,
     whatsappLink: DEFAULT_WHATSAPP_LINK,
@@ -558,6 +627,7 @@ function App() {
         startDate: data.startDate,
         duration: data.duration,
         mode: data.mode,
+        stipend: data.stipend,
         issueDate: data.issueDate,
       }),
     });
@@ -871,7 +941,16 @@ function App() {
             </Field>
 
             <Field label="Stipend">
-              <input value="UnPaid" readOnly />
+              <select
+                value={data.stipend}
+                onChange={(e) => update("stipend", e.target.value)}
+              >
+                <option value="Performance Based — Up to ₹5,000">
+                  Performance Based — Up to ₹5,000
+                </option>
+
+                <option value="UnPaid">UnPaid</option>
+              </select>
             </Field>
 
             <Field label="Email Subject">

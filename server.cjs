@@ -418,7 +418,7 @@ async function createIntern(req, res) {
   const mode = String(body.mode || "").trim();
   const issueDate = String(body.issueDate || "").trim();
 
-  const stipend = "UnPaid";
+  const stipend = String(body.stipend || "").trim();
 
   if (!name) {
     return sendJson(res, 400, {
@@ -453,6 +453,11 @@ async function createIntern(req, res) {
   if (!mode) {
     return sendJson(res, 400, {
       message: "Mode is required.",
+    });
+  }
+  if (!stipend) {
+    return sendJson(res, 400, {
+      message: "Stipend is required.",
     });
   }
 
