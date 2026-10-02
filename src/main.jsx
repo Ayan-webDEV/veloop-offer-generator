@@ -326,9 +326,9 @@ async function buildPdf(data) {
    * Stipend
    *
    * Default:
-   * Performance Based — Up to ₹5,000
+   * Performance Based — Up to ₹6,000
    */
-  const stipend = data.stipend || "Performance Based — Up to ₹5,000";
+  const stipend = data.stipend || "Performance Based — Up to ₹6,000";
 
   /*
    * ============================================================
@@ -477,7 +477,7 @@ async function buildPdf(data) {
 
   cover(page, 224, 541, 335, 20);
 
-  const stipendValue = data.stipend || "Performance Based — Up to ₹5,000";
+  const stipendValue = data.stipend || "Performance Based — Up to ₹6,000";
 
   const stipendX = 227.21;
 
@@ -529,7 +529,7 @@ function App() {
     startDate: todayISTISO(),
     duration: "1 Month",
     mode: "Remote",
-    stipend: "Performance Based — Up to ₹5,000",
+    stipend: "Performance Based — Up to ₹6,000",
     internId: "",
     subject: DEFAULT_EMAIL_SUBJECT,
     whatsappLink: DEFAULT_WHATSAPP_LINK,
@@ -945,8 +945,8 @@ function App() {
                 value={data.stipend}
                 onChange={(e) => update("stipend", e.target.value)}
               >
-                <option value="Performance Based — Up to ₹5,000">
-                  Performance Based — Up to ₹5,000
+                <option value="Performance Based — Up to ₹6,000">
+                  Performance Based — Up to ₹6,000
                 </option>
 
                 <option value="UnPaid">UnPaid</option>
