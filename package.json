@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "start": "node server.cjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:server": "node --check server.cjs"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
@@ -18,7 +19,12 @@
     "pdf-lib": "^1.17.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "resend": "^6.31.0",
+    "resend": "^6.31.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "tailwindcss": "^4.1.14",
     "vite": "^7.1.10"
   }
 }
