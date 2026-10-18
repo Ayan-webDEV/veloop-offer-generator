@@ -2405,6 +2405,179 @@ app.post("/api/create-intern", async (req, res) => {
   return createIntern(req, res);
 });
 
+/**
+ * Protected server-to-server offer verification.
+ *
+ * This endpoint is additive. It does not change the existing
+ * offer-generation, PDF, email, or dashboard routes.
+ */
+app.post("/api/interns/verify", async (req, res) => {
+  if (!requireDatabase(res)) return;
+
+  // Fail closed: never expose offer verification without a secret.
+  const expectedKey = String(
+    process.env.INTERN_VERIFICATION_API_KEY || "",
+  ).trim();
+
+  if (!expectedKey) {
+    return sendJson(res, 503, {
+      verified: false,
+      message: "Offer verification is not configured.",
+    });
+  }
+
+  // The attendance backend sends both headers. Accept either
+  // supported header so the endpoint remains easy to test.
+  const authorization = String(req.headers.authorization || "");
+  const bearerKey = authorization.startsWith("Bearer ")
+    ? authorization.slice(7).trim()
+    : "";
+
+  const providedKey = String(req.get("x-integration-key") || bearerKey).trim();
+
+  const providedBuffer = Buffer.from(providedKey, "utf8");
+  const expectedBuffer = Buffer.from(expectedKey, "utf8");
+
+  const keyIsValid =
+    providedBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+
+  if (!keyIsValid) {
+    return sendJson(res, 401, {
+      verified: false,
+      message: "Invalid integration credentials.",
+    });
+  }
+
+  // Validate the submitted fields.
+  const rawInternId = String(req.body?.internId || "");
+  const submittedName = String(req.body?.name || "")
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  const submittedEmail = String(req.body?.email || "")
+    .trim()
+    .toLowerCase();
+
+  if (!rawInternId.trim() || !submittedName || !submittedEmail) {
+    return sendJson(res, 400, {
+      verified: false,
+      message: "Intern ID, name, and email are required.",
+    });
+  }
+
+  // Support both existing four-digit IDs and the attendance
+  // system's five-digit canonical format. Never change stored IDs.
+  const submittedId = rawInternId
+    .trim()
+    .toUpperCase()
+    .replace(/[\s_-]+/g, "");
+
+  const idMatch = submittedId.match(/^VLRINT(\d{4})(\d{4,5})$/);
+
+  if (!idMatch) {
+    return sendJson(res, 422, {
+      verified: false,
+      message: "The intern details could not be verified.",
+    });
+  }
+
+  const year = idMatch[1];
+  const sequence = idMatch[2];
+
+  const canonicalInternId = `VLRINT${year}${sequence.padStart(5, "0")}`;
+
+  // For a five-digit sequence beginning with zero, also check
+  // the equivalent legacy four-digit ID.
+  const candidateIds = new Set([submittedId, canonicalInternId]);
+
+  if (sequence.length === 5 && sequence.startsWith("0")) {
+    candidateIds.add(`VLRINT${year}${sequence.slice(1)}`);
+  }
+
+  const normalizeName = (value) =>
+    String(value || "")
+      .normalize("NFKC")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLocaleUpperCase("en-US");
+
+  try {
+    const records = await internsCollection
+      .find({
+        internId: { $in: [...candidateIds] },
+      })
+      .limit(3)
+      .toArray();
+
+    // Match all three pieces of information against the actual
+    // database record. Do not accept an ID by itself.
+    const matchingRecords = records.filter((record) => {
+      const storedEmail = String(record.email || "")
+        .trim()
+        .toLowerCase();
+
+      return (
+        normalizeName(record.name) === normalizeName(submittedName) &&
+        storedEmail === submittedEmail
+      );
+    });
+
+    // Ambiguous matches must not authorize registration.
+    if (matchingRecords.length !== 1) {
+      return sendJson(res, 422, {
+        verified: false,
+        message: "The intern details could not be verified.",
+      });
+    }
+
+    const intern = matchingRecords[0];
+
+    // Require a successfully sent offer. Also support older records
+    // that have offerSent=true but predate the offerStatus field.
+    const offerWasSent =
+      intern.offerSent === true &&
+      (!intern.offerStatus || intern.offerStatus === "sent");
+
+    if (!offerWasSent) {
+      return sendJson(res, 422, {
+        verified: false,
+        message: "A successfully sent offer letter is required.",
+      });
+    }
+
+    // Return only fields needed by the attendance backend.
+    return sendJson(res, 200, {
+      verified: true,
+      internId: canonicalInternId,
+      name: intern.name,
+      email: String(intern.email).trim().toLowerCase(),
+      domain: intern.domain || null,
+      startDate: intern.startDate || null,
+      issueDate: intern.issueDate || null,
+      duration: intern.duration ?? null,
+      mode: intern.mode || null,
+      stipend: intern.stipend ?? null,
+      offerSent: intern.offerSent === true,
+      offerStatus: intern.offerStatus || "sent",
+      offerSentAt: intern.offerSentAt || null,
+    });
+  } catch (error) {
+    console.error(
+      "INTERN VERIFICATION ERROR:",
+      error?.message || "Unknown database error",
+    );
+
+    return sendJson(res, 503, {
+      verified: false,
+      message: "Offer verification is temporarily unavailable.",
+    });
+  }
+});
+
+// ======================================================================================================
+
 app.post("/api/send-offer", async (req, res) => {
   if (!requireDatabase(res)) return;
   return sendOffer(req, res);
