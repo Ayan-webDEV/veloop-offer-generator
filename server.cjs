@@ -2414,7 +2414,7 @@ app.post("/api/create-intern", async (req, res) => {
 app.post("/api/interns/verify", async (req, res) => {
   if (!requireDatabase(res)) return;
 
-  // Fail closed: never expose offer verification without a secret.
+  // Fail closed: never expose offer verification without a shared secret.
   const expectedKey = String(
     process.env.INTERN_VERIFICATION_API_KEY || "",
   ).trim();
@@ -2426,8 +2426,7 @@ app.post("/api/interns/verify", async (req, res) => {
     });
   }
 
-  // The attendance backend sends both headers. Accept either
-  // supported header so the endpoint remains easy to test.
+  // Accept either integration header used by the attendance backend.
   const authorization = String(req.headers.authorization || "");
   const bearerKey = authorization.startsWith("Bearer ")
     ? authorization.slice(7).trim()
@@ -2449,8 +2448,9 @@ app.post("/api/interns/verify", async (req, res) => {
     });
   }
 
-  // Validate the submitted fields.
-  const rawInternId = String(req.body?.internId || "");
+  // During registration autofill the attendance backend sends only internId.
+  // During final account creation it also sends name and email for comparison.
+  const rawInternId = String(req.body?.internId || "").trim();
   const submittedName = String(req.body?.name || "")
     .normalize("NFKC")
     .trim()
@@ -2460,19 +2460,20 @@ app.post("/api/interns/verify", async (req, res) => {
     .trim()
     .toLowerCase();
 
-  if (!rawInternId.trim() || !submittedName || !submittedEmail) {
+  const hasName = Boolean(submittedName);
+  const hasEmail = Boolean(submittedEmail);
+
+  if (!rawInternId || hasName !== hasEmail) {
     return sendJson(res, 400, {
       verified: false,
-      message: "Intern ID, name, and email are required.",
+      message:
+        "A valid Intern ID is required. Name and email must be supplied together.",
     });
   }
 
-  // Support both existing four-digit IDs and the attendance
-  // system's five-digit canonical format. Never change stored IDs.
-  const submittedId = rawInternId
-    .trim()
-    .toUpperCase()
-    .replace(/[\s_-]+/g, "");
+  // Support existing four-digit IDs and the attendance system's five-digit
+  // canonical sequence. Stored IDs are not modified.
+  const submittedId = rawInternId.toUpperCase().replace(/[\s_-]+/g, "");
 
   const idMatch = submittedId.match(/^VLRINT(\d{4})(\d{4,5})$/);
 
@@ -2488,8 +2489,8 @@ app.post("/api/interns/verify", async (req, res) => {
 
   const canonicalInternId = `VLRINT${year}${sequence.padStart(5, "0")}`;
 
-  // For a five-digit sequence beginning with zero, also check
-  // the equivalent legacy four-digit ID.
+  // Also check the legacy four-digit sequence when a canonical sequence
+  // begins with zero.
   const candidateIds = new Set([submittedId, canonicalInternId]);
 
   if (sequence.length === 5 && sequence.startsWith("0")) {
@@ -2503,6 +2504,10 @@ app.post("/api/interns/verify", async (req, res) => {
       .replace(/\s+/g, " ")
       .toLocaleUpperCase("en-US");
 
+  const isOfferSent = (record) =>
+    record.offerSent === true &&
+    (!record.offerStatus || record.offerStatus === "sent");
+
   try {
     const records = await internsCollection
       .find({
@@ -2511,49 +2516,80 @@ app.post("/api/interns/verify", async (req, res) => {
       .limit(3)
       .toArray();
 
-    // Match all three pieces of information against the actual
-    // database record. Do not accept an ID by itself.
-    const matchingRecords = records.filter((record) => {
-      const storedEmail = String(record.email || "")
-        .trim()
-        .toLowerCase();
+    if (records.length === 0) {
+      return sendJson(res, 404, {
+        verified: false,
+        message: "No offer-letter record was found for this Intern ID.",
+      });
+    }
 
-      return (
-        normalizeName(record.name) === normalizeName(submittedName) &&
-        storedEmail === submittedEmail
-      );
-    });
+    // ID-only lookup: return exactly one successfully sent offer record.
+    // The attendance backend separately checks its email against the
+    // authenticated Google account before allowing registration to continue.
+    let matchingRecords;
 
-    // Ambiguous matches must not authorize registration.
-    if (matchingRecords.length !== 1) {
+    if (!hasName && !hasEmail) {
+      matchingRecords = records.filter(isOfferSent);
+    } else {
+      // Final verification: additionally compare the submitted name and email.
+      matchingRecords = records.filter((record) => {
+        const storedEmail = String(record.email || "")
+          .trim()
+          .toLowerCase();
+
+        return (
+          normalizeName(record.name) === normalizeName(submittedName) &&
+          storedEmail === submittedEmail
+        );
+      });
+    }
+
+    if (matchingRecords.length === 0) {
+      if (
+        !hasName &&
+        !hasEmail &&
+        records.every((record) => !isOfferSent(record))
+      ) {
+        return sendJson(res, 422, {
+          verified: false,
+          message: "A successfully sent offer letter is required.",
+        });
+      }
+
       return sendJson(res, 422, {
         verified: false,
         message: "The intern details could not be verified.",
       });
     }
 
+    // Never choose arbitrarily if legacy and canonical IDs both resolve
+    // to different matching records.
+    if (matchingRecords.length !== 1) {
+      return sendJson(res, 409, {
+        verified: false,
+        message:
+          "Multiple offer records match this Intern ID. Please contact the administrator.",
+      });
+    }
+
     const intern = matchingRecords[0];
 
-    // Require a successfully sent offer. Also support older records
-    // that have offerSent=true but predate the offerStatus field.
-    const offerWasSent =
-      intern.offerSent === true &&
-      (!intern.offerStatus || intern.offerStatus === "sent");
-
-    if (!offerWasSent) {
+    if (!isOfferSent(intern)) {
       return sendJson(res, 422, {
         verified: false,
         message: "A successfully sent offer letter is required.",
       });
     }
 
-    // Return only fields needed by the attendance backend.
+    // Return only fields required by the attendance backend.
     return sendJson(res, 200, {
       verified: true,
       internId: canonicalInternId,
       name: intern.name,
-      email: String(intern.email).trim().toLowerCase(),
-      domain: intern.domain || null,
+      email: String(intern.email || "")
+        .trim()
+        .toLowerCase(),
+      domain: intern.domain || intern.position || null,
       startDate: intern.startDate || null,
       issueDate: intern.issueDate || null,
       duration: intern.duration ?? null,

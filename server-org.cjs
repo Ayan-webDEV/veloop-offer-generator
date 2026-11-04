@@ -1249,14 +1249,12 @@ async function connectMongoDB() {
 
 async function generateNextInternId() {
   const currentYear = new Date().getFullYear();
+  const counterFilter = { _id: "internId", year: currentYear };
 
-  // Ensure this year's counter exists before incrementing it.
-  // This avoids applying $inc and $setOnInsert to the same field.
+  // Initialize the counter separately: MongoDB does not allow the same field
+  // to be modified by both $inc and $setOnInsert in one update operation.
   await countersCollection.updateOne(
-    {
-      _id: "internId",
-      year: currentYear,
-    },
+    counterFilter,
     {
       $setOnInsert: {
         lastNumber: INTERN_ID_START_NUMBER - 1,
@@ -1266,20 +1264,13 @@ async function generateNextInternId() {
   );
 
   const result = await countersCollection.findOneAndUpdate(
-    {
-      _id: "internId",
-      year: currentYear,
-    },
-    {
-      $inc: { lastNumber: 1 },
-    },
-    {
-      returnDocument: "after",
-    },
+    counterFilter,
+    { $inc: { lastNumber: 1 } },
+    { returnDocument: "after" },
   );
 
-  // MongoDB driver versions may return either the document itself
-  // or a result object containing the document in `value`.
+  // MongoDB driver versions differ in whether findOneAndUpdate returns the
+  // document directly or wraps it in a result object's `value` property.
   const counter = result?.value ?? result;
 
   if (!counter || !Number.isInteger(counter.lastNumber)) {
@@ -2182,6 +2173,188 @@ app.get("/api/interns", requireAdmin, async (req, res) => {
 });
 
 // ------------------------------------------------------------
+// EMAIL EVENT HISTORY — FILTERING, PAGINATION AND SUMMARY
+// ------------------------------------------------------------
+
+app.get("/api/email-events", requireAdmin, async (req, res) => {
+  if (!requireDatabase(res)) return;
+
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(
+      100,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 10),
+    );
+    const skip = (page - 1) * limit;
+    const search = String(req.query.search || "").trim();
+    const status = String(req.query.status || "")
+      .trim()
+      .toLowerCase();
+    const from = String(req.query.from || "").trim();
+    const to = String(req.query.to || "").trim();
+    const conditions = [];
+
+    if (search) {
+      const expression = new RegExp(escapeRegex(search), "i");
+      conditions.push({
+        $or: [
+          { internId: expression },
+          { recipientName: expression },
+          { recipientEmail: expression },
+          { provider: expression },
+          { messageId: expression },
+          { errorMessage: expression },
+        ],
+      });
+    }
+
+    if (status) {
+      if (!["sent", "failed", "pending"].includes(status)) {
+        return sendJson(res, 400, { message: "Invalid email event status." });
+      }
+      conditions.push({ status });
+    }
+
+    if (from || to) {
+      const sentAt = {};
+      if (from) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+          return sendJson(res, 400, { message: "Invalid start date." });
+        }
+        const startDate = new Date(`${from}T00:00:00.000Z`);
+        if (Number.isNaN(startDate.getTime())) {
+          return sendJson(res, 400, { message: "Invalid start date." });
+        }
+        sentAt.$gte = startDate;
+      }
+      if (to) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+          return sendJson(res, 400, { message: "Invalid end date." });
+        }
+        const endDate = new Date(`${to}T23:59:59.999Z`);
+        if (Number.isNaN(endDate.getTime())) {
+          return sendJson(res, 400, { message: "Invalid end date." });
+        }
+        sentAt.$lte = endDate;
+      }
+      conditions.push({ sentAt });
+    }
+
+    const filter = conditions.length ? { $and: conditions } : {};
+    const [events, total, sent, failed, latest] = await Promise.all([
+      emailEventsCollection
+        .find(filter)
+        .sort({ sentAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .project({ _id: 0 })
+        .toArray(),
+      emailEventsCollection.countDocuments(filter),
+      emailEventsCollection.countDocuments({
+        $and: [filter, { status: "sent" }],
+      }),
+      emailEventsCollection.countDocuments({
+        $and: [filter, { status: "failed" }],
+      }),
+      emailEventsCollection.findOne(filter, {
+        sort: { sentAt: -1 },
+        projection: { _id: 0, sentAt: 1 },
+      }),
+    ]);
+
+    return sendJson(res, 200, {
+      ok: true,
+      events,
+      records: events,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+      summary: {
+        total,
+        sent,
+        failed,
+        pending: Math.max(0, total - sent - failed),
+        latestEventAt: latest?.sentAt || null,
+      },
+    });
+  } catch (error) {
+    console.error("EMAIL EVENTS ERROR:", error);
+    return sendJson(res, 500, {
+      message: "Could not load email event history.",
+    });
+  }
+});
+
+// ------------------------------------------------------------
+// CSV EXPORT DATA
+// ------------------------------------------------------------
+
+app.get("/api/interns/export", requireAdmin, async (req, res) => {
+  if (!requireDatabase(res)) return;
+
+  try {
+    const q = String(req.query.q || "").trim();
+    const status = String(req.query.status || "")
+      .trim()
+      .toLowerCase();
+    const domain = String(req.query.domain || "").trim();
+    const duration = String(req.query.duration || "").trim();
+    const mode = String(req.query.mode || "").trim();
+    const conditions = [];
+
+    if (q) {
+      const expression = new RegExp(escapeRegex(q), "i");
+      conditions.push({
+        $or: [
+          { internId: expression },
+          { name: expression },
+          { email: expression },
+        ],
+      });
+    }
+
+    if (domain) conditions.push({ domain });
+    if (duration) conditions.push({ duration });
+    if (mode) conditions.push({ mode });
+
+    if (status === "sent") {
+      conditions.push({ $or: [{ offerStatus: "sent" }, { offerSent: true }] });
+    } else if (status === "failed") {
+      conditions.push({ offerStatus: "failed" });
+    } else if (status === "pending") {
+      conditions.push({
+        offerSent: { $ne: true },
+        offerStatus: { $nin: ["failed"] },
+      });
+    }
+
+    const filter = conditions.length ? { $and: conditions } : {};
+
+    const records = await internsCollection
+      .find(filter)
+      .sort({ offerCreatedAt: -1 })
+      .limit(10000)
+      .project({ _id: 0 })
+      .toArray();
+
+    return sendJson(res, 200, {
+      ok: true,
+      records,
+      truncated: records.length === 10000,
+    });
+  } catch (error) {
+    console.error("INTERN EXPORT ERROR:", error);
+
+    return sendJson(res, 500, {
+      message: "Could not export intern records.",
+    });
+  }
+});
+
+// ------------------------------------------------------------
 // SINGLE INTERN DETAILS AND EMAIL HISTORY
 // ------------------------------------------------------------
 
@@ -2224,59 +2397,6 @@ app.get("/api/interns/:internId", requireAdmin, async (req, res) => {
 });
 
 // ------------------------------------------------------------
-// CSV EXPORT DATA
-// ------------------------------------------------------------
-
-app.get("/api/interns/export", requireAdmin, async (req, res) => {
-  if (!requireDatabase(res)) return;
-
-  try {
-    const q = String(req.query.q || "").trim();
-    const status = String(req.query.status || "").trim();
-
-    const filter = {};
-
-    if (q) {
-      const expression = new RegExp(escapeRegex(q), "i");
-
-      filter.$or = [
-        { internId: expression },
-        { name: expression },
-        { email: expression },
-      ];
-    }
-
-    if (status === "sent") {
-      filter.$or = [{ offerStatus: "sent" }, { offerSent: true }];
-    } else if (status === "failed") {
-      filter.offerStatus = "failed";
-    } else if (status === "pending") {
-      filter.offerSent = { $ne: true };
-      filter.offerStatus = { $nin: ["failed"] };
-    }
-
-    const records = await internsCollection
-      .find(filter)
-      .sort({ offerCreatedAt: -1 })
-      .limit(10000)
-      .project({ _id: 0 })
-      .toArray();
-
-    return sendJson(res, 200, {
-      ok: true,
-      records,
-      truncated: records.length === 10000,
-    });
-  } catch (error) {
-    console.error("INTERN EXPORT ERROR:", error);
-
-    return sendJson(res, 500, {
-      message: "Could not export intern records.",
-    });
-  }
-});
-
-// ------------------------------------------------------------
 // EXISTING APPLICATION ROUTES
 // ------------------------------------------------------------
 
@@ -2284,6 +2404,179 @@ app.post("/api/create-intern", async (req, res) => {
   if (!requireDatabase(res)) return;
   return createIntern(req, res);
 });
+
+/**
+ * Protected server-to-server offer verification.
+ *
+ * This endpoint is additive. It does not change the existing
+ * offer-generation, PDF, email, or dashboard routes.
+ */
+app.post("/api/interns/verify", async (req, res) => {
+  if (!requireDatabase(res)) return;
+
+  // Fail closed: never expose offer verification without a secret.
+  const expectedKey = String(
+    process.env.INTERN_VERIFICATION_API_KEY || "",
+  ).trim();
+
+  if (!expectedKey) {
+    return sendJson(res, 503, {
+      verified: false,
+      message: "Offer verification is not configured.",
+    });
+  }
+
+  // The attendance backend sends both headers. Accept either
+  // supported header so the endpoint remains easy to test.
+  const authorization = String(req.headers.authorization || "");
+  const bearerKey = authorization.startsWith("Bearer ")
+    ? authorization.slice(7).trim()
+    : "";
+
+  const providedKey = String(req.get("x-integration-key") || bearerKey).trim();
+
+  const providedBuffer = Buffer.from(providedKey, "utf8");
+  const expectedBuffer = Buffer.from(expectedKey, "utf8");
+
+  const keyIsValid =
+    providedBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+
+  if (!keyIsValid) {
+    return sendJson(res, 401, {
+      verified: false,
+      message: "Invalid integration credentials.",
+    });
+  }
+
+  // Validate the submitted fields.
+  const rawInternId = String(req.body?.internId || "");
+  const submittedName = String(req.body?.name || "")
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  const submittedEmail = String(req.body?.email || "")
+    .trim()
+    .toLowerCase();
+
+  if (!rawInternId.trim() || !submittedName || !submittedEmail) {
+    return sendJson(res, 400, {
+      verified: false,
+      message: "Intern ID, name, and email are required.",
+    });
+  }
+
+  // Support both existing four-digit IDs and the attendance
+  // system's five-digit canonical format. Never change stored IDs.
+  const submittedId = rawInternId
+    .trim()
+    .toUpperCase()
+    .replace(/[\s_-]+/g, "");
+
+  const idMatch = submittedId.match(/^VLRINT(\d{4})(\d{4,5})$/);
+
+  if (!idMatch) {
+    return sendJson(res, 422, {
+      verified: false,
+      message: "The intern details could not be verified.",
+    });
+  }
+
+  const year = idMatch[1];
+  const sequence = idMatch[2];
+
+  const canonicalInternId = `VLRINT${year}${sequence.padStart(5, "0")}`;
+
+  // For a five-digit sequence beginning with zero, also check
+  // the equivalent legacy four-digit ID.
+  const candidateIds = new Set([submittedId, canonicalInternId]);
+
+  if (sequence.length === 5 && sequence.startsWith("0")) {
+    candidateIds.add(`VLRINT${year}${sequence.slice(1)}`);
+  }
+
+  const normalizeName = (value) =>
+    String(value || "")
+      .normalize("NFKC")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLocaleUpperCase("en-US");
+
+  try {
+    const records = await internsCollection
+      .find({
+        internId: { $in: [...candidateIds] },
+      })
+      .limit(3)
+      .toArray();
+
+    // Match all three pieces of information against the actual
+    // database record. Do not accept an ID by itself.
+    const matchingRecords = records.filter((record) => {
+      const storedEmail = String(record.email || "")
+        .trim()
+        .toLowerCase();
+
+      return (
+        normalizeName(record.name) === normalizeName(submittedName) &&
+        storedEmail === submittedEmail
+      );
+    });
+
+    // Ambiguous matches must not authorize registration.
+    if (matchingRecords.length !== 1) {
+      return sendJson(res, 422, {
+        verified: false,
+        message: "The intern details could not be verified.",
+      });
+    }
+
+    const intern = matchingRecords[0];
+
+    // Require a successfully sent offer. Also support older records
+    // that have offerSent=true but predate the offerStatus field.
+    const offerWasSent =
+      intern.offerSent === true &&
+      (!intern.offerStatus || intern.offerStatus === "sent");
+
+    if (!offerWasSent) {
+      return sendJson(res, 422, {
+        verified: false,
+        message: "A successfully sent offer letter is required.",
+      });
+    }
+
+    // Return only fields needed by the attendance backend.
+    return sendJson(res, 200, {
+      verified: true,
+      internId: canonicalInternId,
+      name: intern.name,
+      email: String(intern.email).trim().toLowerCase(),
+      domain: intern.domain || null,
+      startDate: intern.startDate || null,
+      issueDate: intern.issueDate || null,
+      duration: intern.duration ?? null,
+      mode: intern.mode || null,
+      stipend: intern.stipend ?? null,
+      offerSent: intern.offerSent === true,
+      offerStatus: intern.offerStatus || "sent",
+      offerSentAt: intern.offerSentAt || null,
+    });
+  } catch (error) {
+    console.error(
+      "INTERN VERIFICATION ERROR:",
+      error?.message || "Unknown database error",
+    );
+
+    return sendJson(res, 503, {
+      verified: false,
+      message: "Offer verification is temporarily unavailable.",
+    });
+  }
+});
+
+// ======================================================================================================
 
 app.post("/api/send-offer", async (req, res) => {
   if (!requireDatabase(res)) return;
