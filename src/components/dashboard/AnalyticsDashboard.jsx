@@ -32,7 +32,7 @@ function AnalyticsMetric({
   accent = "orange",
 }) {
   const accents = {
-    orange: "bg-orange-50 text-orange-600",
+    orange: "bg-blue-50 text-blue-600",
     emerald: "bg-emerald-50 text-emerald-600",
     rose: "bg-rose-50 text-rose-600",
     blue: "bg-blue-50 text-blue-600",
@@ -120,8 +120,8 @@ function AnalyticsDashboard({
     >
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-orange-100 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
-            <span className="size-1.5 rounded-full bg-orange-500" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+            <span className="size-1.5 rounded-full bg-blue-500" />
             Performance insights
           </div>
 
@@ -183,9 +183,9 @@ function AnalyticsDashboard({
         <div
           role="status"
           aria-label="Loading analytics"
-          className="h-1 overflow-hidden rounded-full bg-orange-100"
+          className="h-1 overflow-hidden rounded-full bg-blue-100"
         >
-          <div className="h-full w-1/3 animate-pulse rounded-full bg-orange-500" />
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-500" />
         </div>
       )}
 

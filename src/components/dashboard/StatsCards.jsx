@@ -31,9 +31,9 @@ const DEFAULT_METRICS = [
 
 const ACCENTS = {
   orange: {
-    icon: "bg-orange-50 text-orange-600 ring-orange-100",
-    bar: "bg-orange-500",
-    label: "text-orange-700",
+    icon: "bg-blue-50 text-blue-600 ring-blue-100",
+    bar: "bg-blue-500",
+    label: "text-blue-700",
   },
   emerald: {
     icon: "bg-emerald-50 text-emerald-600 ring-emerald-100",

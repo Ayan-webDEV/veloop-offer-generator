@@ -161,8 +161,8 @@ function EmailHistoryDashboard({
         .join(" ")}
     >
       <header>
-        <div className="inline-flex items-center gap-2 rounded-full border border-orange-100 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
-          <span className="size-1.5 rounded-full bg-orange-500" />
+        <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+          <span className="size-1.5 rounded-full bg-blue-500" />
           Email operations
         </div>
 
@@ -283,7 +283,7 @@ function EmailHistoryDashboard({
                   setPage(1);
                 }}
                 placeholder="Name, email, intern ID..."
-                className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
               />
             </div>
 
@@ -302,7 +302,7 @@ function EmailHistoryDashboard({
                   setStatusFilter(event.target.value);
                   setPage(1);
                 }}
-                className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
               >
                 <option value="all">All statuses</option>
                 <option value="sent">Sent</option>
@@ -327,7 +327,7 @@ function EmailHistoryDashboard({
                   setProviderFilter(event.target.value);
                   setPage(1);
                 }}
-                className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
               >
                 <option value="all">All providers</option>
                 {providers.map((provider) => (
@@ -344,9 +344,9 @@ function EmailHistoryDashboard({
           <div
             role="status"
             aria-label="Loading email events"
-            className="h-1 overflow-hidden bg-orange-50"
+            className="h-1 overflow-hidden bg-blue-50"
           >
-            <div className="h-full w-1/3 animate-pulse rounded-full bg-orange-500" />
+            <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-500" />
           </div>
         )}
 
@@ -401,7 +401,7 @@ function EmailHistoryDashboard({
                   return (
                     <tr
                       key={key}
-                      className="transition-colors hover:bg-orange-50/30"
+                      className="transition-colors hover:bg-blue-50/30"
                     >
                       <td className="px-5 py-4">
                         <p className="text-sm font-semibold text-slate-900">
@@ -434,7 +434,7 @@ function EmailHistoryDashboard({
                         <button
                           type="button"
                           onClick={() => setSelectedEvent(event)}
-                          className="inline-flex min-h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100"
+                          className="inline-flex min-h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
                         >
                           View details
                         </button>

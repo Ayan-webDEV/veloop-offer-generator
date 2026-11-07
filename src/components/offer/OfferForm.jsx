@@ -90,7 +90,7 @@ function ActionButton({
   const styles = {
     primary:
       // "border border-brand-600 bg-brand-600 text-white shadow-sm shadow-brand-600/15 hover:border-brand-700 hover:bg-brand-700",
-      " inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-orange-600 bg-orange-600 px-5 py-3 text-sm font-bold text-white shadow-md shadow-orange-600/20 transition-all duration-200 hover:-translate-y-0.5 hover:border-orange-700 hover:bg-orange-700 hover:shadow-lg hover:shadow-orange-600/30 active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-500/30 disabled:cursor-not-allowed disabled:opacity-50",
+      " inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-600 bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-md shadow-blue-600/20 transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-700 hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-600/30 active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50",
     secondary:
       // "border border-line bg-white text-ink-800 hover:border-ink-500/40 hover:bg-canvas",
       "inline-flex min-h-11 w-full items-center mb-6 justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-3 text-sm font-bold text-emerald-800 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-emerald-900 hover:bg-emerald-900 hover:text-white hover:shadow-xl hover:shadow-emerald-900/30 active:translate-y-0 active:scale-95 active:border-emerald-700 active:bg-emerald-700 active:text-white active:shadow-inner focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-sm",
@@ -127,6 +127,7 @@ export default function OfferForm({
   requiredFieldsFilled = false,
   error = "",
   success = "",
+  quotaExhausted = false,
 }) {
   const locked = Boolean(data.internId) || isOfferGenerated;
 
@@ -404,7 +405,7 @@ export default function OfferForm({
             <ActionButton
               variant="primary"
               type="submit"
-              disabled={busy || !requiredFieldsFilled || isOfferGenerated}
+              disabled={busy || quotaExhausted || !requiredFieldsFilled || isOfferGenerated}
             >
               {busy && !isOfferGenerated ? (
                 <>
@@ -414,7 +415,7 @@ export default function OfferForm({
               ) : (
                 <>
                   <span aria-hidden="true">✦</span>
-                  Generate offer letter
+                  {quotaExhausted ? "Daily email limit reached" : "Generate offer letter"}
                 </>
               )}
             </ActionButton>
@@ -422,7 +423,7 @@ export default function OfferForm({
             <ActionButton
               variant="dark"
               onClick={onSend}
-              disabled={busy || !isOfferGenerated || !requiredFieldsFilled}
+              disabled={busy || quotaExhausted || !isOfferGenerated || !requiredFieldsFilled}
             >
               {busy && isOfferGenerated ? "Sending…" : "Send offer letter"}
               <span aria-hidden="true">→</span>

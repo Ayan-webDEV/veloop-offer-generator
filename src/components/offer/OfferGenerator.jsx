@@ -4,7 +4,8 @@ import OfferForm from "./OfferForm.jsx";
 import PdfPreview from "./PdfPreview.jsx";
 import EmailBodyPreview from "./EmailBodyPreview.jsx";
 
-import { apiPost } from "../../services/api.js";
+import { apiGet, apiPost } from "../../services/api.js";
+import EmailUsagePanel from "../dashboard/EmailUsagePanel.jsx";
 import { arrayBufferToBase64, buildPdf } from "../../utils/pdf.js";
 import { todayISTISO } from "../../utils/dates.js";
 
@@ -36,6 +37,28 @@ function validateEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
+// function validateWhatsAppLink(value) {
+//   if (!String(value || "").trim()) return false;
+
+//   try {
+//     const url = new URL(value.trim());
+
+//     return (
+//       url.protocol === "https:" &&
+//       [
+//         "chat.whatsapp.com",
+//         "www.chat.whatsapp.com",
+//         "wa.me",
+//         "www.wa.me",
+//         "api.whatsapp.com",
+//       ].includes(url.hostname.toLowerCase()) &&
+//       !url.username &&
+//       !url.password
+//     );
+//   } catch {
+//     return false;
+//   }
+// }
 function validateWhatsAppLink(value) {
   if (!String(value || "").trim()) return false;
 
@@ -44,15 +67,10 @@ function validateWhatsAppLink(value) {
 
     return (
       url.protocol === "https:" &&
-      [
-        "chat.whatsapp.com",
-        "www.chat.whatsapp.com",
-        "wa.me",
-        "www.wa.me",
-        "api.whatsapp.com",
-      ].includes(url.hostname.toLowerCase()) &&
+      url.hostname.toLowerCase() === "chat.whatsapp.com" &&
       !url.username &&
-      !url.password
+      !url.password &&
+      /^\/[A-Za-z0-9_-]+\/?$/.test(url.pathname)
     );
   } catch {
     return false;
@@ -164,6 +182,21 @@ export default function OfferGenerator() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [toast, setToast] = useState("");
+  const [channelSwitching, setChannelSwitching] = useState(false);
+  const [emailUsage, setEmailUsage] = useState(null);
+
+  const refreshEmailUsage = useCallback(async () => {
+    try {
+      const response = await apiGet("/api/email-usage");
+      setEmailUsage(response?.usage || null);
+    } catch (error) {
+      console.warn("Email usage unavailable:", error.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshEmailUsage();
+  }, [refreshEmailUsage]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -226,6 +259,12 @@ export default function OfferGenerator() {
   };
 
   const generateOffer = async () => {
+    if (emailUsage?.exhausted) {
+      setError(
+        "Both Resend channels have reached today's 200-attempt limit. Offer generation will resume after midnight IST.",
+      );
+      return;
+    }
     if (!data.name.trim()) {
       setError("Enter the intern's full name.");
       return;
@@ -243,7 +282,7 @@ export default function OfferGenerator() {
 
     if (!validateWhatsAppLink(data.whatsappLink)) {
       setError(
-        "Enter a valid HTTPS WhatsApp community link before generating the offer.",
+        "Enter a valid WhatsApp group invitation link (https://chat.whatsapp.com/...).",
       );
       return;
     }
@@ -304,12 +343,32 @@ export default function OfferGenerator() {
       return;
     }
 
+    if (emailUsage?.exhausted) {
+      setError(
+        "Both Resend channels have reached today's 200-attempt limit. Email sending will resume after midnight IST.",
+      );
+      return;
+    }
+
     setBusy(true);
     setError("");
     setSuccess("");
     setToast("");
 
     try {
+      const latestUsageResponse = await apiGet("/api/email-usage");
+      const latestUsage = latestUsageResponse?.usage || emailUsage;
+      setEmailUsage(latestUsage);
+      if (latestUsage?.channel1 >= 100 && latestUsage?.channel2 < 100) {
+        setChannelSwitching(true);
+        await new Promise((resolve) => window.setTimeout(resolve, 1700));
+        setChannelSwitching(false);
+      }
+      if (latestUsage?.exhausted) {
+        throw new Error(
+          "Both Resend channels have reached today's 200-attempt limit.",
+        );
+      }
       await apiPost(EMAIL_API_ENDPOINT, {
         internId: data.internId,
         recipientEmail: data.email.trim(),
@@ -337,11 +396,14 @@ export default function OfferGenerator() {
       );
 
       setToast("Offer email submitted successfully.");
+      await refreshEmailUsage();
     } catch (cause) {
       console.error("Offer email submission failed:", cause);
       setError(cause?.message || "Could not send the offer letter.");
     } finally {
+      setChannelSwitching(false);
       setBusy(false);
+      refreshEmailUsage();
     }
   };
 
@@ -413,6 +475,9 @@ export default function OfferGenerator() {
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
+      <div className="mb-6">
+        <EmailUsagePanel compact />
+      </div>
       <div className="mb-8 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
         <div className="max-w-3xl">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.16em] text-brand-700">
@@ -481,6 +546,13 @@ export default function OfferGenerator() {
         />
       </div>
 
+      {emailUsage?.exhausted && (
+        <div className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">
+          Both email channels have used their 100 attempts for today. Offer
+          generation and sending are paused until midnight IST.
+        </div>
+      )}
+
       <div className="mb-5 space-y-3">
         <FeedbackMessage type="error" onDismiss={() => setError("")}>
           {error}
@@ -524,6 +596,7 @@ export default function OfferGenerator() {
                 requiredFieldsFilled={requiredFieldsFilled}
                 error={error}
                 success={success}
+                quotaExhausted={Boolean(emailUsage?.exhausted)}
               />
             </div>
           </div>
@@ -586,6 +659,27 @@ export default function OfferGenerator() {
         </div>
       </section>
 
+      {busy && (
+        <div
+          className="fixed inset-0 z-99999 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="w-full max-w-sm rounded-3xl border border-blue-100 bg-white p-7 text-center shadow-2xl">
+            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
+            <h3 className="text-lg font-black text-slate-950">
+              {channelSwitching
+                ? "Switching email channel"
+                : "Processing your request"}
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              {channelSwitching
+                ? "Channel 1 has reached its daily limit. Activating Resend Channel 2…"
+                : "Please wait while the offer workflow completes securely."}
+            </p>
+          </div>
+        </div>
+      )}
       <footer className="mt-8 flex flex-col gap-2 border-t border-line py-5 text-xs text-ink-500 sm:flex-row sm:items-center sm:justify-between">
         <p>
           <span className="font-bold text-ink-700">VELOOP REWARDS</span> ·

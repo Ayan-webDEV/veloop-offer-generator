@@ -113,8 +113,8 @@ function OverviewDashboard({
     >
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-orange-100 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
-            <span className="size-1.5 rounded-full bg-orange-500" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+            <span className="size-1.5 rounded-full bg-blue-500" />
             Admin workspace
           </div>
 
@@ -170,11 +170,11 @@ function OverviewDashboard({
 
       {loading && (
         <div
-          className="h-1 overflow-hidden rounded-full bg-orange-100"
+          className="h-1 overflow-hidden rounded-full bg-blue-100"
           role="status"
           aria-label="Loading dashboard data"
         >
-          <div className="h-full w-1/3 animate-pulse rounded-full bg-orange-500" />
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-500" />
         </div>
       )}
 
@@ -210,7 +210,7 @@ function OverviewDashboard({
             <button
               type="button"
               onClick={onViewAll}
-              className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-orange-700 transition hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100"
+              className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
             >
               View all activity
               <svg

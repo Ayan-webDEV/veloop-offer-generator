@@ -92,7 +92,7 @@ function InternFilters({
   }
 
   const inputClass =
-    "min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100 disabled:cursor-not-allowed disabled:bg-slate-50";
+    "min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50";
 
   return (
     <section
@@ -106,7 +106,7 @@ function InternFilters({
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+          <div className="flex size-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
             <FilterIcon />
           </div>
 
@@ -124,7 +124,7 @@ function InternFilters({
           type="button"
           onClick={handleClear}
           disabled={loading || !hasActiveFilters}
-          className="inline-flex min-h-9 items-center justify-center rounded-lg px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex min-h-9 items-center justify-center rounded-lg px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Clear filters
         </button>
@@ -277,7 +277,7 @@ function InternFilters({
                 type="button"
                 disabled={loading}
                 onClick={() => handleChange(key, "")}
-                className="inline-flex min-h-7 items-center gap-1.5 rounded-full border border-orange-100 bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-800 transition hover:border-orange-200 hover:bg-orange-100 disabled:opacity-50"
+                className="inline-flex min-h-7 items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800 transition hover:border-blue-200 hover:bg-blue-100 disabled:opacity-50"
                 aria-label={`Remove ${key} filter`}
               >
                 <span className="max-w-48 truncate">

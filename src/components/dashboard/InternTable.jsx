@@ -123,8 +123,8 @@ function InternTable({
       </div>
 
       {loading && (
-        <div className="h-1 overflow-hidden bg-orange-50">
-          <div className="h-full w-1/3 animate-pulse rounded-full bg-orange-500" />
+        <div className="h-1 overflow-hidden bg-blue-50">
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-500" />
         </div>
       )}
 
@@ -223,11 +223,11 @@ function InternTable({
                 return (
                   <tr
                     key={id}
-                    className="group transition-colors hover:bg-orange-50/30"
+                    className="group transition-colors hover:bg-blue-50/30"
                   >
                     <td className="px-5 py-4">
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-100 to-amber-50 text-sm font-bold text-orange-700 ring-1 ring-inset ring-orange-200/70">
+                        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-100 to-amber-50 text-sm font-bold text-blue-700 ring-1 ring-inset ring-blue-200/70">
                           {name
                             .split(/\s+/)
                             .filter(Boolean)
@@ -281,7 +281,7 @@ function InternTable({
                         type="button"
                         disabled={!viewHandler}
                         onClick={() => viewHandler?.(record)}
-                        className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label={`View details for ${name}`}
                       >
                         <TableIcon name="eye" />

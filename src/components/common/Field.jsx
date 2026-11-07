@@ -32,7 +32,7 @@ function Field({
             .join(" ") || undefined,
         className: [
           "w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500",
-          "focus:border-orange-400 focus:ring-4 focus:ring-orange-100",
+          "focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
           error
             ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100"
             : "border-slate-200 hover:border-slate-300",

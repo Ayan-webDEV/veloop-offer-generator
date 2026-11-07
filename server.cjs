@@ -197,7 +197,8 @@
 // const { MongoClient, ServerApiVersion } = require("mongodb");
 
 // const PORT = Number(process.env.PORT || 8787);
-// const resend = new Resend(process.env.RESEND_API_KEY);
+// const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+// const resend2 = process.env.RESEND_API_KEY_2 ? new Resend(process.env.RESEND_API_KEY_2) : null;
 // const BREVO_API_KEY = process.env.BREVO_API_KEY;
 // const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL;
 
@@ -396,7 +397,7 @@
 //     throw new Error("Could not generate the next Intern ID.");
 //   }
 
-//   return `VLRINT${currentYear}${String(counter.lastNumber).padStart(4, "0")}`;
+//   return `VLRINT${currentYear}${String(counter.lastNumber).padStart(5, "0")}`;
 // }
 
 // /*
@@ -955,6 +956,8 @@
 
 // app.post("/api/mark-offer-sent", async (req, res) => markOfferAsSent(req, res));
 
+// app.get("/api/email-usage", async (req, res) => {});
+
 // app.get("/api/health", (req, res) => {
 //   return res.json({
 //     ok: true,
@@ -1049,14 +1052,19 @@ const EMAIL_PROVIDER = String(process.env.EMAIL_PROVIDER || "resend")
 const MONGODB_URI = process.env.MONGODB_URI;
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "veloop_offers";
 
-const INTERN_ID_START_NUMBER = Math.max(
-  1,
-  Number(process.env.INTERN_ID_START_NUMBER || 1),
-);
+// const INTERN_ID_START_NUMBER = Math.max(
+//   1,
+//   Number(process.env.INTERN_ID_START_NUMBER || 1),
+// );
 
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = process.env.RESEND_API_KEY
+  ? new Resend(process.env.RESEND_API_KEY)
+  : null;
+const resend2 = process.env.RESEND_API_KEY_2
+  ? new Resend(process.env.RESEND_API_KEY_2)
+  : null;
 
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL;
@@ -1072,6 +1080,10 @@ let database;
 let internsCollection;
 let countersCollection;
 let emailEventsCollection;
+let emailQuotaCollection;
+let settingsCollection;
+let reminderQueueCollection;
+let whatsappGroupsCollection;
 
 // In-memory admin sessions. Sessions expire after 12 hours.
 // Restarting the server invalidates all active sessions.
@@ -1210,6 +1222,10 @@ async function connectMongoDB() {
   internsCollection = database.collection("interns");
   countersCollection = database.collection("counters");
   emailEventsCollection = database.collection("emailSendEvents");
+  emailQuotaCollection = database.collection("emailQuotaDaily");
+  settingsCollection = database.collection("appSettings");
+  reminderQueueCollection = database.collection("whatsappReminderQueue");
+  whatsappGroupsCollection = database.collection("whatsappGroups");
 
   await database.command({ ping: 1 });
 
@@ -1220,6 +1236,26 @@ async function connectMongoDB() {
   await internsCollection.createIndex({ offerCreatedAt: -1 });
   await internsCollection.createIndex({ offerSentAt: -1 });
 
+  await reminderQueueCollection.createIndex({ status: 1, dueAt: 1 });
+  // Each WhatsApp group link is stored only once.
+  await whatsappGroupsCollection.createIndex(
+    { whatsappLink: 1 },
+    { unique: true },
+  );
+
+  // Group sequence numbers must be unique.
+  await whatsappGroupsCollection.createIndex(
+    { sequenceNumber: 1 },
+    { unique: true },
+  );
+
+  // MongoDB automatically deletes expired WhatsApp group documents.
+  // TTL deletion is asynchronous and may take a little longer than 48 hours.
+  await whatsappGroupsCollection.createIndex(
+    { expiresAt: 1 },
+    { expireAfterSeconds: 0 },
+  );
+  await reminderQueueCollection.createIndex({ internId: 1 }, { unique: true });
   await emailEventsCollection.createIndex({ sentAt: -1 });
   await emailEventsCollection.createIndex({
     status: 1,
@@ -1230,54 +1266,214 @@ async function connectMongoDB() {
     sentAt: -1,
   });
 
-  await countersCollection.updateOne(
-    { _id: "internId", year: new Date().getFullYear() },
-    {
-      $setOnInsert: {
-        lastNumber: INTERN_ID_START_NUMBER - 1,
-      },
-    },
-    { upsert: true },
-  );
+  // await countersCollection.updateOne(
+  //   // { _id: "internId", year: new Date().getFullYear() },
+  //   {
+  //     $setOnInsert: {
+  //       lastNumber: INTERN_ID_START_NUMBER - 1,
+  //     },
+  //   },
+  //   { upsert: true },
+  // );
+
+  // // Recover the sequence from seeded/imported records so IDs never restart
+  // // from 00001 when the counter document is missing or behind existing interns.
+  // const currentYear = new Date().getFullYear();
+  // const existingIds = await internsCollection
+  //   .find({ internId: new RegExp(`^VLRINT${currentYear}\\d{5}$`) })
+  //   .project({ internId: 1 })
+  //   .toArray();
+  // const highestExistingSequence = existingIds.reduce((highest, record) => {
+  //   const match = String(record.internId || "").match(/^VLRINT\d{4}(\d{5})$/);
+  //   return match ? Math.max(highest, Number(match[1])) : highest;
+  // }, 0);
+  // // if (highestExistingSequence > 0) {
+  // //   await countersCollection.updateOne(
+  // //     { _id: "internId", year: currentYear },
+  // //     { $max: { lastNumber: highestExistingSequence } },
+  // //   );
+  // // }
 
   console.log(`MongoDB connected: ${MONGODB_DB_NAME}`);
+}
+
+// ------------------------------------------------------------
+// TEMPORARY WHATSAPP GROUP REGISTRY
+// ------------------------------------------------------------
+
+const WHATSAPP_GROUP_TTL_MS = 48 * 60 * 60 * 1000;
+
+function normalizeWhatsAppLink(value) {
+  const link = String(value || "").trim();
+
+  if (!/^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_-]+\/?$/i.test(link)) {
+    throw Object.assign(
+      new Error("Please provide a valid WhatsApp group invitation link."),
+      { statusCode: 400 },
+    );
+  }
+
+  return link.replace(/\/+$/, "");
+}
+
+async function getOrCreateWhatsAppGroup(rawLink) {
+  const whatsappLink = normalizeWhatsAppLink(rawLink);
+  const now = new Date();
+
+  // Reuse an existing non-expired group.
+  const existing = await whatsappGroupsCollection.findOne({
+    whatsappLink,
+    expiresAt: { $gt: now },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  // Allocate a new permanent sequence number.
+  const counterResult = await countersCollection.findOneAndUpdate(
+    { _id: "whatsappGroupSequence" },
+    {
+      $inc: { lastNumber: 1 },
+      $setOnInsert: { createdAt: now },
+    },
+    {
+      upsert: true,
+      returnDocument: "after",
+    },
+  );
+
+  const counter = counterResult?.value ?? counterResult;
+
+  if (!counter || !Number.isInteger(counter.lastNumber)) {
+    throw new Error("Could not allocate WhatsApp group sequence number.");
+  }
+
+  const group = {
+    sequenceNumber: counter.lastNumber,
+    whatsappLink,
+    createdAt: now,
+    expiresAt: new Date(now.getTime() + WHATSAPP_GROUP_TTL_MS),
+  };
+
+  try {
+    await whatsappGroupsCollection.insertOne(group);
+    return group;
+  } catch (error) {
+    // If two admins submit the same link simultaneously,
+    // the unique index prevents duplicate storage.
+    if (error.code === 11000) {
+      const duplicate = await whatsappGroupsCollection.findOne({
+        whatsappLink,
+        expiresAt: { $gt: new Date() },
+      });
+
+      if (duplicate) return duplicate;
+    }
+
+    throw error;
+  }
+}
+
+async function getWhatsAppGroupBySequence(sequenceNumber) {
+  if (!Number.isInteger(Number(sequenceNumber))) return null;
+
+  return whatsappGroupsCollection.findOne({
+    sequenceNumber: Number(sequenceNumber),
+    expiresAt: { $gt: new Date() },
+  });
 }
 
 // ------------------------------------------------------------
 // INTERN ID GENERATOR
 // ------------------------------------------------------------
 
+// async function generateNextInternId() {
+//   const currentYear = new Date().getFullYear();
+//   const counterFilter = { _id: "internId", year: currentYear };
+
+//   // Initialize the counter separately: MongoDB does not allow the same field
+//   // to be modified by both $inc and $setOnInsert in one update operation.
+//   await countersCollection.updateOne(
+//     counterFilter,
+//     {
+//       $setOnInsert: {
+//         lastNumber: INTERN_ID_START_NUMBER - 1,
+//       },
+//     },
+//     { upsert: true },
+//   );
+
+//   const result = await countersCollection.findOneAndUpdate(
+//     counterFilter,
+//     { $inc: { lastNumber: 1 } },
+//     { returnDocument: "after" },
+//   );
+
+//   // MongoDB driver versions differ in whether findOneAndUpdate returns the
+//   // document directly or wraps it in a result object's `value` property.
+//   const counter = result?.value ?? result;
+
+//   if (!counter || !Number.isInteger(counter.lastNumber)) {
+//     throw new Error("Could not generate the next Intern ID.");
+//   }
+
+//   return `VLRINT${currentYear}${String(counter.lastNumber).padStart(5, "0")}`;
+// }
+
 async function generateNextInternId() {
-  const currentYear = new Date().getFullYear();
-  const counterFilter = { _id: "internId", year: currentYear };
+  const configId = "activeInternIdSequence";
 
-  // Initialize the counter separately: MongoDB does not allow the same field
-  // to be modified by both $inc and $setOnInsert in one update operation.
-  await countersCollection.updateOne(
-    counterFilter,
-    {
-      $setOnInsert: {
-        lastNumber: INTERN_ID_START_NUMBER - 1,
-      },
-    },
-    { upsert: true },
-  );
-
+  // The admin must configure the complete starting Intern ID first.
   const result = await countersCollection.findOneAndUpdate(
-    counterFilter,
-    { $inc: { lastNumber: 1 } },
-    { returnDocument: "after" },
+    {
+      _id: configId,
+      lastNumber: { $gte: 0, $lt: 99999 },
+    },
+    {
+      $inc: { lastNumber: 1 },
+      $set: { updatedAt: new Date() },
+    },
+    {
+      returnDocument: "after",
+    },
   );
 
-  // MongoDB driver versions differ in whether findOneAndUpdate returns the
-  // document directly or wraps it in a result object's `value` property.
+  // Compatible with MongoDB driver return formats.
   const counter = result?.value ?? result;
 
-  if (!counter || !Number.isInteger(counter.lastNumber)) {
-    throw new Error("Could not generate the next Intern ID.");
+  if (
+    !counter ||
+    !Number.isInteger(Number(counter.year)) ||
+    !Number.isInteger(Number(counter.lastNumber)) ||
+    Number(counter.year) < 1000 ||
+    Number(counter.year) > 9999 ||
+    Number(counter.lastNumber) < 1 ||
+    Number(counter.lastNumber) > 99999
+  ) {
+    throw new Error(
+      "Intern ID sequence is not configured or has reached its limit. Please configure the starting Intern ID in Admin Settings.",
+    );
   }
 
-  return `VLRINT${currentYear}${String(counter.lastNumber).padStart(4, "0")}`;
+  const year = Number(counter.year);
+  const sequence = Number(counter.lastNumber);
+
+  const internId = `VLRINT${year}${String(sequence).padStart(5, "0")}`;
+
+  // Extra protection against an already-used ID.
+  const existingIntern = await internsCollection.findOne(
+    { internId },
+    { projection: { _id: 1 } },
+  );
+
+  if (existingIntern) {
+    throw new Error(
+      `Intern ID ${internId} already exists. Update the starting sequence in Admin Settings.`,
+    );
+  }
+
+  return internId;
 }
 
 // ------------------------------------------------------------
@@ -1286,6 +1482,15 @@ async function generateNextInternId() {
 
 async function createIntern(req, res) {
   const body = req.body || {};
+  if (EMAIL_PROVIDER === "resend") {
+    const usage = await getResendUsage();
+    if (usage.exhausted)
+      return sendJson(res, 429, {
+        message:
+          "Today's 200 Resend attempts are used. Today's 200 Resend attempts are used. New offer generation is paused until 05:30 AM IST.",
+        usage,
+      });
+  }
 
   const name = String(body.name || "").trim();
   const email = String(body.email || "")
@@ -1318,6 +1523,30 @@ async function createIntern(req, res) {
   }
 
   try {
+    // Check whether this email is already registered.
+    // Case-insensitive comparison prevents uppercase/lowercase duplicates.
+    const existingEmail = await internsCollection.findOne(
+      { email },
+      {
+        collation: { locale: "en", strength: 2 },
+        projection: {
+          _id: 0,
+          internId: 1,
+          email: 1,
+          offerStatus: 1,
+        },
+      },
+    );
+
+    if (existingEmail) {
+      return sendJson(res, 409, {
+        ok: false,
+        code: "EMAIL_ALREADY_REGISTERED",
+        message: `This email is already registered with Intern ID ${existingEmail.internId}. One Intern can only assign one internID.`,
+      });
+    }
+
+    // Generate Intern ID only after duplicate email validation.
     const internId = await generateNextInternId();
     const now = new Date();
 
@@ -1331,10 +1560,18 @@ async function createIntern(req, res) {
       mode,
       stipend,
       issueDate,
+
       offerCreatedAt: now,
       offerSent: false,
       offerSentAt: null,
       offerStatus: "pending",
+
+      // Only interns created after this implementation
+      // are eligible for WhatsApp onboarding reminders.
+      reminderEligible: true,
+
+      // Assigned when the offer is sent.
+      groupSequenceNumber: null,
     };
 
     await internsCollection.insertOne(document);
@@ -1463,6 +1700,7 @@ async function recordEmailEvent({
   recipientEmail,
   recipientName,
   provider,
+  channel = null,
   status,
   messageId = null,
   errorMessage = null,
@@ -1472,12 +1710,20 @@ async function recordEmailEvent({
     recipientEmail: String(recipientEmail || "").toLowerCase(),
     recipientName: recipientName || "",
     provider,
+    ...(channel ? { channel } : {}),
     status,
     messageId,
     errorMessage,
     sentAt: new Date(),
   };
 
+  if (arguments[0]?.eventId) {
+    await emailEventsCollection.updateOne(
+      { _id: arguments[0].eventId },
+      { $set: event },
+    );
+    return;
+  }
   await emailEventsCollection.insertOne(event);
 }
 
@@ -1493,7 +1739,7 @@ async function markEmailSent(internId, provider, messageId) {
         offerSentAt: now,
         emailProvider: provider,
         lastEmailError: null,
-        ...(provider === "resend"
+        ...(String(provider || "").startsWith("resend")
           ? { resendMessageId: messageId || null }
           : {}),
         ...(provider === "brevo" ? { brevoMessageId: messageId || null } : {}),
@@ -1513,6 +1759,108 @@ async function markEmailFailed(internId, errorMessage) {
       },
     },
   );
+}
+
+// ------------------------------------------------------------
+// DAILY RESEND CHANNEL ROTATION (IST): 100 sends per channel / 200 total
+// Each attempt reserves a slot and creates a pending event before provider I/O.
+// This intentionally counts failed/pending attempts as requested.
+// ------------------------------------------------------------
+
+// Resend quota day starts at 05:30 AM IST.
+// The quota date changes exactly at 05:30 AM IST.
+function currentISTDateKey() {
+  const now = new Date();
+
+  // Shift the current time backwards by 5 hours and 30 minutes.
+  const quotaDate = new Date(now.getTime() - 5.5 * 60 * 60 * 1000);
+
+  return getISTParts(quotaDate).dateString;
+}
+
+async function reserveResendChannel({
+  internId,
+  recipientEmail,
+  recipientName,
+}) {
+  const dateKey = currentISTDateKey();
+  const quotaId = `resend:${dateKey}`;
+  await emailQuotaCollection.updateOne(
+    { _id: quotaId },
+    {
+      $setOnInsert: {
+        date: dateKey,
+        channel1: 0,
+        channel2: 0,
+        createdAt: new Date(),
+      },
+    },
+    { upsert: true },
+  );
+
+  let quota = await emailQuotaCollection.findOneAndUpdate(
+    { _id: quotaId, channel1: { $lt: 100 } },
+    { $inc: { channel1: 1 }, $set: { updatedAt: new Date() } },
+    { returnDocument: "after" },
+  );
+  quota = quota?.value ?? quota;
+  let channel = 1;
+
+  if (!quota) {
+    quota = await emailQuotaCollection.findOneAndUpdate(
+      { _id: quotaId, channel2: { $lt: 100 } },
+      { $inc: { channel2: 1 }, $set: { updatedAt: new Date() } },
+      { returnDocument: "after" },
+    );
+    quota = quota?.value ?? quota;
+    channel = 2;
+  }
+
+  if (!quota) {
+    return { exhausted: true, date: dateKey, channel1: 100, channel2: 100 };
+  }
+
+  const event = {
+    internId,
+    recipientEmail: String(recipientEmail || "").toLowerCase(),
+    recipientName: recipientName || "",
+    provider: channel === 1 ? "resend-channel-1" : "resend-channel-2",
+    channel,
+    status: "pending",
+    messageId: null,
+    errorMessage: null,
+    sentAt: new Date(),
+  };
+  const inserted = await emailEventsCollection.insertOne(event);
+  return {
+    channel,
+    eventId: inserted.insertedId,
+    date: dateKey,
+    channel1: Number(quota.channel1 || 0),
+    channel2: Number(quota.channel2 || 0),
+  };
+}
+
+async function getResendUsage() {
+  const date = currentISTDateKey();
+  const quota = await emailQuotaCollection.findOne({ _id: `resend:${date}` });
+  return {
+    date,
+    channel1: Number(quota?.channel1 || 0),
+    channel2: Number(quota?.channel2 || 0),
+    total: Number(quota?.channel1 || 0) + Number(quota?.channel2 || 0),
+    limitPerChannel: 100,
+    dailyLimit: 200,
+    activeChannel:
+      Number(quota?.channel1 || 0) < 100
+        ? 1
+        : Number(quota?.channel2 || 0) < 100
+          ? 2
+          : null,
+    exhausted:
+      Number(quota?.channel1 || 0) >= 100 &&
+      Number(quota?.channel2 || 0) >= 100,
+  };
 }
 
 // ------------------------------------------------------------
@@ -1591,15 +1939,136 @@ Best Regards,
 Team VELoop Rewards`;
 }
 
+// async function scheduleWhatsAppReminder({
+//   internId,
+//   recipientEmail,
+//   recipientName,
+//   whatsappLink,
+// }) {
+//   try {
+//     const saved = await settingsCollection.findOne({ _id: "whatsappReminder" });
+//     const settings = { ...DEFAULT_REMINDER_SETTINGS, ...(saved || {}) };
+//     if (!settings.enabled || !BREVO_API_KEY || !settings.senderEmail) return;
+//     const dueAt = new Date(Date.now() + settings.delayMinutes * 60 * 1000);
+//     await reminderQueueCollection.updateOne(
+//       { internId },
+//       {
+//         $set: {
+//           internId,
+//           recipientEmail,
+//           recipientName,
+//           whatsappLink,
+//           dueAt,
+//           status: "pending",
+//           scheduledAt: new Date(),
+//         },
+//       },
+//       { upsert: true },
+//     );
+//   } catch (error) {
+//     console.error("REMINDER SCHEDULING ERROR:", error.message);
+//   }
+// }
+async function scheduleWhatsAppReminder({
+  internId,
+  recipientEmail,
+  recipientName,
+  groupSequenceNumber,
+}) {
+  try {
+    const intern = await internsCollection.findOne({
+      internId,
+      reminderEligible: true,
+    });
+
+    // Never schedule reminders for old interns.
+    if (!intern) return;
+
+    if (!groupSequenceNumber) {
+      console.warn(
+        `REMINDER NOT SCHEDULED: No WhatsApp group assigned to ${internId}`,
+      );
+      return;
+    }
+
+    const group = await getWhatsAppGroupBySequence(Number(groupSequenceNumber));
+
+    if (!group) {
+      console.warn(
+        `REMINDER NOT SCHEDULED: WhatsApp group ${groupSequenceNumber} is unavailable.`,
+      );
+      return;
+    }
+
+    const saved = await settingsCollection.findOne({
+      _id: "whatsappReminder",
+    });
+
+    const settings = {
+      ...DEFAULT_REMINDER_SETTINGS,
+      ...(saved || {}),
+    };
+
+    if (!settings.enabled || !BREVO_API_KEY || !settings.senderEmail) {
+      return;
+    }
+
+    const delayMinutes = Math.max(1, Number(settings.delayMinutes) || 150);
+
+    // The link is retained for a maximum of 48 hours.
+    // Do not schedule a reminder beyond its expiry.
+    if (delayMinutes * 60 * 1000 >= WHATSAPP_GROUP_TTL_MS) {
+      console.warn(
+        `REMINDER NOT SCHEDULED: Configured delay exceeds the 48-hour group-link retention period for ${internId}.`,
+      );
+      return;
+    }
+
+    const dueAt = new Date(Date.now() + delayMinutes * 60 * 1000);
+
+    await reminderQueueCollection.updateOne(
+      { internId },
+      {
+        $set: {
+          internId,
+          recipientEmail,
+          recipientName,
+          groupSequenceNumber: group.sequenceNumber,
+          dueAt,
+          status: "pending",
+          scheduledAt: new Date(),
+        },
+        $unset: {
+          whatsappLink: "",
+        },
+      },
+      { upsert: true },
+    );
+
+    console.log(
+      `WhatsApp reminder scheduled for ${internId}, group ${group.sequenceNumber}`,
+    );
+  } catch (error) {
+    console.error("REMINDER SCHEDULING ERROR:", error.message);
+  }
+}
 // ------------------------------------------------------------
 // SEND EMAIL THROUGH RESEND
 // ------------------------------------------------------------
 
 async function sendOfferWithResend(body, res) {
-  if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) {
+  const channel = Number(body.emailChannel || 1);
+  const activeResend = channel === 2 ? resend2 : resend;
+  const fromEmail =
+    channel === 2
+      ? process.env.RESEND_FROM_EMAIL_2
+      : process.env.RESEND_FROM_EMAIL;
+  if (!activeResend || !fromEmail) {
     return sendJson(res, 500, {
       message:
-        "Resend is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL in .env.",
+        channel === 2
+          ? "Resend Channel 2 is not configured. Set RESEND_API_KEY_2 and RESEND_FROM_EMAIL_2."
+          : "Resend Channel 1 is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL.",
     });
   }
 
@@ -1614,8 +2083,8 @@ async function sendOfferWithResend(body, res) {
   } = body;
 
   try {
-    const { data, error } = await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL,
+    const { data, error } = await activeResend.emails.send({
+      from: fromEmail,
       to: [recipientEmail],
       subject,
       html: buildEmailHtml({
@@ -1642,7 +2111,9 @@ async function sendOfferWithResend(body, res) {
         internId,
         recipientEmail,
         recipientName,
-        provider: "resend",
+        provider: channel === 2 ? "resend-channel-2" : "resend-channel-1",
+        channel,
+        eventId: body.emailEventId,
         status: "failed",
         errorMessage: error.message,
       }).catch(console.error);
@@ -1656,13 +2127,25 @@ async function sendOfferWithResend(body, res) {
 
     const messageId = data?.id || null;
 
-    await markEmailSent(internId, "resend", messageId);
+    await markEmailSent(
+      internId,
+      channel === 2 ? "resend-channel-2" : "resend-channel-1",
+      messageId,
+    );
+    await scheduleWhatsAppReminder({
+      internId,
+      recipientEmail,
+      recipientName,
+      groupSequenceNumber: body.groupSequenceNumber,
+    });
 
     await recordEmailEvent({
       internId,
       recipientEmail,
       recipientName,
-      provider: "resend",
+      provider: channel === 2 ? "resend-channel-2" : "resend-channel-1",
+      channel,
+      eventId: body.emailEventId,
       status: "sent",
       messageId,
     });
@@ -1680,7 +2163,9 @@ async function sendOfferWithResend(body, res) {
       internId,
       recipientEmail,
       recipientName,
-      provider: "resend",
+      provider: channel === 2 ? "resend-channel-2" : "resend-channel-1",
+      channel,
+      eventId: body.emailEventId,
       status: "failed",
       errorMessage: error.message,
     }).catch(console.error);
@@ -1784,6 +2269,12 @@ async function sendOfferWithBrevo(body, res) {
     const messageId = result?.messageId || null;
 
     await markEmailSent(internId, "brevo", messageId);
+    await scheduleWhatsAppReminder({
+      internId,
+      recipientEmail,
+      recipientName,
+      groupSequenceNumber: body.groupSequenceNumber,
+    });
 
     await recordEmailEvent({
       internId,
@@ -1820,6 +2311,47 @@ async function sendOfferWithBrevo(body, res) {
   }
 }
 
+// async function sendOffer(req, res) {
+//   let body;
+
+//   try {
+//     body = parseOfferRequest(req);
+//   } catch (error) {
+//     return sendJson(res, error.statusCode || 400, {
+//       message: error.message || "Invalid offer request.",
+//     });
+//   }
+
+//   if (EMAIL_PROVIDER === "resend") {
+//     try {
+//       const reservation = await reserveResendChannel(body);
+//       if (reservation.exhausted) {
+//         return sendJson(res, 429, {
+//           message:
+//             "Today's Resend capacity is exhausted (200/200). Offer letter generation is still available, but email sending is paused until the next IST day.",
+//           usage: reservation,
+//         });
+//       }
+//       body.emailChannel = reservation.channel;
+//       body.emailEventId = reservation.eventId;
+//       const result = await sendOfferWithResend(body, res);
+//       return result;
+//     } catch (error) {
+//       console.error("RESEND CHANNEL RESERVATION ERROR:", error);
+//       return sendJson(res, 500, {
+//         message: "Could not reserve an email channel. Please retry.",
+//       });
+//     }
+//   }
+
+//   if (EMAIL_PROVIDER === "brevo") {
+//     return sendOfferWithBrevo(body, res);
+//   }
+
+//   return sendJson(res, 500, {
+//     message: `Unsupported EMAIL_PROVIDER "${EMAIL_PROVIDER}". Use "resend" or "brevo".`,
+//   });
+// }
 async function sendOffer(req, res) {
   let body;
 
@@ -1831,17 +2363,85 @@ async function sendOffer(req, res) {
     });
   }
 
-  if (EMAIL_PROVIDER === "resend") {
-    return sendOfferWithResend(body, res);
-  }
+  try {
+    // Resolve the intern and verify that it exists.
+    const intern = await internsCollection.findOne({
+      internId: body.internId,
+    });
 
-  if (EMAIL_PROVIDER === "brevo") {
-    return sendOfferWithBrevo(body, res);
-  }
+    if (!intern) {
+      return sendJson(res, 404, {
+        message: "Intern record not found.",
+      });
+    }
 
-  return sendJson(res, 500, {
-    message: `Unsupported EMAIL_PROVIDER "${EMAIL_PROVIDER}". Use "resend" or "brevo".`,
-  });
+    // Verify that the recipient email matches the registered email.
+    const registeredEmail = String(intern.email || "")
+      .trim()
+      .toLowerCase();
+
+    const requestedEmail = String(body.recipientEmail || "")
+      .trim()
+      .toLowerCase();
+
+    if (!registeredEmail || requestedEmail !== registeredEmail) {
+      return sendJson(res, 409, {
+        ok: false,
+        code: "EMAIL_MISMATCH",
+        message:
+          "The recipient email does not match the email registered with this Intern ID.",
+      });
+    }
+
+    // Create or reuse the centralized WhatsApp group.
+    const group = await getOrCreateWhatsAppGroup(body.whatsappLink);
+
+    // Assign the group to this intern.
+    await internsCollection.updateOne(
+      { internId: body.internId },
+      {
+        $set: {
+          groupSequenceNumber: group.sequenceNumber,
+          updatedAt: new Date(),
+        },
+      },
+    );
+
+    // The offer email uses the exact link resolved from MongoDB.
+    body.whatsappLink = group.whatsappLink;
+    body.groupSequenceNumber = group.sequenceNumber;
+
+    if (EMAIL_PROVIDER === "resend") {
+      const reservation = await reserveResendChannel(body);
+
+      if (reservation.exhausted) {
+        return sendJson(res, 429, {
+          message:
+            "Today's Resend capacity is exhausted (200/200). Today's Resend capacity is exhausted (200/200). Email sending is paused until 05:30 AM IST.",
+          usage: reservation,
+        });
+      }
+
+      body.emailChannel = reservation.channel;
+      body.emailEventId = reservation.eventId;
+
+      return await sendOfferWithResend(body, res);
+    }
+
+    if (EMAIL_PROVIDER === "brevo") {
+      return await sendOfferWithBrevo(body, res);
+    }
+
+    return sendJson(res, 500, {
+      message: `Unsupported EMAIL_PROVIDER "${EMAIL_PROVIDER}". Use "resend" or "brevo".`,
+    });
+  } catch (error) {
+    console.error("SEND OFFER ERROR:", error);
+
+    return sendJson(res, error.statusCode || 500, {
+      message: error.message || "Could not send the offer letter.",
+    });
+  }
 }
 
 // ------------------------------------------------------------
@@ -2050,8 +2650,10 @@ app.get("/api/dashboard/stats", requireAdmin, async (req, res) => {
       a.date.localeCompare(b.date),
     );
 
+    const resendUsage = await getResendUsage();
     return sendJson(res, 200, {
       ok: true,
+      resendUsage,
       timezone: IST,
       today: day.dateString,
       month: `${month.year}-${String(month.month).padStart(2, "0")}`,
@@ -2397,6 +2999,305 @@ app.get("/api/interns/:internId", requireAdmin, async (req, res) => {
 });
 
 // ------------------------------------------------------------
+// ADMIN: INTERN MANAGEMENT, OFFER SEQUENCE AND EMAIL SETTINGS
+// ------------------------------------------------------------
+app.patch("/api/interns/:internId", requireAdmin, async (req, res) => {
+  if (!requireDatabase(res)) return;
+  const internId = String(req.params.internId || "").trim();
+  const allowed = [
+    "name",
+    "email",
+    "domain",
+    "startDate",
+    "duration",
+    "mode",
+    "stipend",
+  ];
+  const updates = {};
+  for (const key of allowed)
+    if (req.body?.[key] !== undefined)
+      updates[key] = String(req.body[key]).trim();
+  if (updates.email && !/^\S+@\S+\.\S+$/.test(updates.email))
+    return sendJson(res, 400, { message: "Enter a valid email address." });
+  if (updates.name) updates.name = updates.name.toUpperCase();
+  updates.updatedAt = new Date();
+  try {
+    const result = await internsCollection.updateOne(
+      { internId },
+      { $set: updates },
+    );
+    if (!result.matchedCount)
+      return sendJson(res, 404, { message: "Intern not found." });
+    return sendJson(res, 200, {
+      ok: true,
+      message: "Intern updated successfully.",
+    });
+  } catch (error) {
+    return sendJson(res, 500, { message: "Could not update intern." });
+  }
+});
+
+app.delete("/api/interns/:internId", requireAdmin, async (req, res) => {
+  if (!requireDatabase(res)) return;
+  const internId = String(req.params.internId || "").trim();
+  try {
+    const result = await internsCollection.deleteOne({ internId });
+    if (!result.deletedCount)
+      return sendJson(res, 404, { message: "Intern not found." });
+    await reminderQueueCollection.deleteMany({ internId });
+    return sendJson(res, 200, { ok: true, message: "Intern deleted." });
+  } catch (error) {
+    return sendJson(res, 500, { message: "Could not delete intern." });
+  }
+});
+
+// app.get("/api/admin/offer-sequence", requireAdmin, async (req, res) => {
+//   const year = new Date().getFullYear();
+//   const counter = await countersCollection.findOne({ _id: "internId", year });
+//   return sendJson(res, 200, {
+//     ok: true,
+//     year,
+//     lastNumber: Number(counter?.lastNumber || 0),
+//     nextNumber: Number(counter?.lastNumber || 0) + 1,
+//     format: `VLRINT${year}00000`,
+//   });
+// });
+
+app.get("/api/admin/offer-sequence", requireAdmin, async (req, res) => {
+  if (!requireDatabase(res)) return;
+
+  try {
+    const config = await countersCollection.findOne({
+      _id: "activeInternIdSequence",
+    });
+
+    // Do not automatically create a sequence or detect the year.
+    if (!config) {
+      return sendJson(res, 200, {
+        ok: true,
+        configured: false,
+        exhausted: false,
+        nextInternId: "",
+        message: "Please configure your starting Intern ID.",
+      });
+    }
+
+    const year = Number(config.year);
+    const lastNumber = Number(config.lastNumber);
+    const nextNumber = lastNumber + 1;
+
+    if (
+      !Number.isInteger(year) ||
+      year < 1000 ||
+      year > 9999 ||
+      !Number.isInteger(lastNumber) ||
+      lastNumber < 0 ||
+      lastNumber > 99999
+    ) {
+      return sendJson(res, 500, {
+        message: "The saved Intern ID sequence is invalid. Please update it.",
+      });
+    }
+
+    if (nextNumber > 99999) {
+      return sendJson(res, 200, {
+        ok: true,
+        configured: true,
+        exhausted: true,
+        year,
+        lastNumber,
+        nextNumber: null,
+        nextInternId: "",
+        message: "The Intern ID sequence has reached its maximum.",
+      });
+    }
+
+    const nextInternId = `VLRINT${year}${String(nextNumber).padStart(5, "0")}`;
+
+    return sendJson(res, 200, {
+      ok: true,
+      configured: true,
+      exhausted: false,
+      year,
+      lastNumber,
+      nextNumber,
+      nextInternId,
+      format: "VLRINTYYYYNNNNN",
+    });
+  } catch (error) {
+    console.error("GET INTERN ID SEQUENCE ERROR:", error);
+
+    return sendJson(res, 500, {
+      message: "Could not load Intern ID sequence.",
+    });
+  }
+});
+
+// app.put("/api/admin/offer-sequence", requireAdmin, async (req, res) => {
+//   const year = new Date().getFullYear();
+//   const nextNumber = Number(req.body?.nextNumber);
+//   if (!Number.isInteger(nextNumber) || nextNumber < 1 || nextNumber > 99999)
+//     return sendJson(res, 400, {
+//       message: "Next sequence must be between 1 and 99999.",
+//     });
+//   const candidateId = `VLRINT${year}${String(nextNumber).padStart(5, "0")}`;
+//   if (
+//     await internsCollection.findOne(
+//       { internId: candidateId },
+//       { projection: { _id: 1 } },
+//     )
+//   ) {
+//     return sendJson(res, 409, {
+//       message: `The selected sequence is already assigned (${candidateId}). Choose a higher number.`,
+//     });
+//   }
+//   await countersCollection.updateOne(
+//     { _id: "internId", year },
+//     {
+//       $set: { lastNumber: nextNumber - 1, updatedAt: new Date() },
+//       $setOnInsert: { year },
+//     },
+//     { upsert: true },
+//   );
+//   return sendJson(res, 200, {
+//     ok: true,
+//     nextNumber,
+//     nextInternId: `VLRINT${year}${String(nextNumber).padStart(5, "0")}`,
+//   });
+// });
+
+app.put("/api/admin/offer-sequence", requireAdmin, async (req, res) => {
+  if (!requireDatabase(res)) return;
+
+  try {
+    const submittedId = String(
+      req.body?.nextInternId || req.body?.internId || "",
+    )
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "");
+
+    // Required format: VLRINT + 4-digit year + 5-digit sequence.
+    const match = submittedId.match(/^VLRINT(\d{4})(\d{5})$/);
+
+    if (!match) {
+      return sendJson(res, 400, {
+        message: "Enter a valid Intern ID, for example VLRINT202603826.",
+      });
+    }
+
+    const year = Number(match[1]);
+    const nextNumber = Number(match[2]);
+
+    if (
+      !Number.isInteger(year) ||
+      year < 1000 ||
+      year > 9999 ||
+      !Number.isInteger(nextNumber) ||
+      nextNumber < 1 ||
+      nextNumber > 99999
+    ) {
+      return sendJson(res, 400, {
+        message: "The entered Intern ID is invalid.",
+      });
+    }
+
+    // Never allow an already-assigned ID to be configured as the next ID.
+    const alreadyExists = await internsCollection.findOne(
+      { internId: submittedId },
+      { projection: { _id: 1 } },
+    );
+
+    if (alreadyExists) {
+      return sendJson(res, 409, {
+        message: `${submittedId} is already assigned to an intern. Please choose another ID.`,
+      });
+    }
+
+    // Save the manually configured Intern ID sequence.
+    await countersCollection.updateOne(
+      { _id: "activeInternIdSequence" },
+      {
+        $set: {
+          year,
+          lastNumber: nextNumber - 1,
+          updatedAt: new Date(),
+        },
+        $setOnInsert: {
+          createdAt: new Date(),
+        },
+      },
+      { upsert: true },
+    );
+
+    return sendJson(res, 200, {
+      ok: true,
+      configured: true,
+      message: "Intern ID sequence updated successfully.",
+      year,
+      lastNumber: nextNumber - 1,
+      nextNumber,
+      nextInternId: submittedId,
+    });
+  } catch (error) {
+    console.error("UPDATE INTERN ID SEQUENCE ERROR:", error);
+
+    return sendJson(res, 500, {
+      message: "Could not update Intern ID sequence.",
+    });
+  }
+});
+
+const DEFAULT_REMINDER_SETTINGS = {
+  enabled: true,
+  delayMinutes: 150,
+  senderName: BREVO_SENDER_NAME || "Team VELoop Rewards",
+  senderEmail: BREVO_SENDER_EMAIL || "",
+  replyTo: BREVO_REPLY_TO || "",
+  subject: "Complete Your VELoop Rewards Onboarding – Join the WhatsApp Group",
+  html: `<div style="margin:0;background:#f4f7fb;padding:36px 12px;font-family:Arial,sans-serif;color:#172554"><div style="max-width:620px;margin:auto;background:#fff;border:1px solid #e5edf7;border-radius:18px;overflow:hidden"><div style="padding:30px 34px;background:#eff6ff;border-bottom:1px solid #dbeafe"><div style="font-size:12px;font-weight:800;letter-spacing:2px;color:#2563eb">VELOOP REWARDS</div><h1 style="margin:14px 0 0;font-size:25px;line-height:1.3;color:#0f172a">Your internship journey starts here</h1></div><div style="padding:30px 34px"><p style="font-size:15px;line-height:1.8">Hello {{name}},</p><p style="font-size:15px;line-height:1.8;color:#475569">Your offer letter has been shared successfully. To receive onboarding instructions, announcements and important updates, please join your assigned WhatsApp group.</p><p style="margin:26px 0"><a href="{{whatsappLink}}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:700">Join WhatsApp Group</a></p><p style="font-size:14px;line-height:1.8;color:#64748b">If you have already joined, you can ignore this reminder. Please keep your offer letter for your records.</p><p style="font-size:14px;color:#334155">Best regards,<br><strong>Team VELoop Rewards</strong></p></div><div style="padding:18px 34px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11px;line-height:1.7;color:#94a3b8">This is an automated onboarding reminder from VELoop Rewards. Please do not reply if you have already completed this step.</div></div></div>`,
+};
+
+app.get("/api/admin/reminder-settings", requireAdmin, async (req, res) => {
+  const saved = await settingsCollection.findOne({ _id: "whatsappReminder" });
+  const settings = { ...DEFAULT_REMINDER_SETTINGS, ...(saved || {}) };
+  delete settings._id;
+  return sendJson(res, 200, { ok: true, settings });
+});
+
+app.put("/api/admin/reminder-settings", requireAdmin, async (req, res) => {
+  const input = req.body || {};
+  const settings = {
+    enabled: input.enabled !== false,
+    delayMinutes: Math.min(
+      10080,
+      Math.max(1, Number(input.delayMinutes) || 150),
+    ),
+    senderName: String(
+      input.senderName || DEFAULT_REMINDER_SETTINGS.senderName,
+    ).slice(0, 120),
+    senderEmail: String(input.senderEmail || "").trim(),
+    replyTo: String(input.replyTo || "").trim(),
+    subject: String(input.subject || DEFAULT_REMINDER_SETTINGS.subject).slice(
+      0,
+      250,
+    ),
+    html: String(input.html || DEFAULT_REMINDER_SETTINGS.html).slice(0, 50000),
+    updatedAt: new Date(),
+  };
+  if (!/^\S+@\S+\.\S+$/.test(settings.senderEmail))
+    return sendJson(res, 400, {
+      message: "A verified Brevo sender email is required.",
+    });
+  await settingsCollection.updateOne(
+    { _id: "whatsappReminder" },
+    { $set: settings },
+    { upsert: true },
+  );
+  return sendJson(res, 200, { ok: true, settings });
+});
+
+// ------------------------------------------------------------
 // EXISTING APPLICATION ROUTES
 // ------------------------------------------------------------
 
@@ -2624,6 +3525,36 @@ app.post("/api/mark-offer-sent", async (req, res) => {
   return markOfferAsSent(req, res);
 });
 
+app.get("/api/email-usage", async (req, res) => {
+  try {
+    if (!database || !emailQuotaCollection) {
+      console.error(
+        "EMAIL USAGE ERROR: MongoDB or emailQuotaCollection is not initialized.",
+      );
+
+      return sendJson(res, 503, {
+        ok: false,
+        message:
+          "MongoDB is not connected or email usage storage is unavailable.",
+      });
+    }
+
+    const usage = await getResendUsage();
+
+    return sendJson(res, 200, {
+      ok: true,
+      usage,
+    });
+  } catch (error) {
+    console.error("EMAIL USAGE ROUTE ERROR:", error);
+
+    return sendJson(res, 500, {
+      ok: false,
+      message: error?.message || "Could not load email usage.",
+    });
+  }
+});
+
 app.get("/api/health", (req, res) => {
   return sendJson(res, 200, {
     ok: true,
@@ -2651,9 +3582,361 @@ app.get(/.*/, (req, res) => {
 // START SERVER
 // ------------------------------------------------------------
 
+async function migrateInternIdsTo15Characters() {
+  console.log("[STARTUP] Intern ID migration started.");
+  const legacy = await internsCollection
+
+    .find({ internId: /^VLRINT\d{4}\d{4}$/ })
+    .toArray();
+  console.log(`[STARTUP] Legacy Intern IDs found: ${legacy.length}`);
+  for (const intern of legacy) {
+    const updatedId = intern.internId.replace(
+      /^(VLRINT\d{4})(\d{4})$/,
+      "$10$2",
+    );
+    try {
+      await internsCollection.updateOne(
+        { _id: intern._id },
+        {
+          $set: {
+            internId: updatedId,
+            legacyInternId: intern.internId,
+            internIdMigratedAt: new Date(),
+          },
+        },
+      );
+      await emailEventsCollection.updateMany(
+        { internId: intern.internId },
+        { $set: { internId: updatedId } },
+      );
+      await reminderQueueCollection.updateMany(
+        { internId: intern.internId },
+        { $set: { internId: updatedId } },
+      );
+    } catch (error) {
+      console.error(
+        "INTERN ID MIGRATION ERROR",
+        intern.internId,
+        error.message,
+      );
+    }
+  }
+  const year = new Date().getFullYear();
+  console.log(
+    "[STARTUP] Legacy migration loop completed. Recovering ID sequence...",
+  );
+  const allCurrentYear = await internsCollection
+    .find({ internId: new RegExp(`^VLRINT${year}\\d{5}$`) })
+    .project({ internId: 1 })
+    .toArray();
+  const highest = allCurrentYear.reduce((max, record) => {
+    const match = String(record.internId || "").match(/^VLRINT\d{4}(\d{5})$/);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  if (highest)
+    await countersCollection.updateOne(
+      { _id: "internId", year },
+      { $max: { lastNumber: highest } },
+    );
+  if (legacy.length)
+    console.log(
+      `Migrated ${legacy.length} legacy Intern IDs to 15-character format.`,
+    );
+}
+
+function renderReminderTemplate(html, intern) {
+  return String(html || "")
+    .replaceAll(
+      "{{name}}",
+      String(intern.name || "Intern").replace(/[<>]/g, ""),
+    )
+    .replaceAll("{{email}}", String(intern.email || ""))
+    .replaceAll("{{internId}}", String(intern.internId || ""))
+    .replaceAll("{{whatsappLink}}", String(intern.whatsappLink || "#"));
+}
+
+// async function processDueWhatsAppReminders() {
+//   if (!reminderQueueCollection || !BREVO_API_KEY) return;
+//   const settingsDoc = await settingsCollection.findOne({
+//     _id: "whatsappReminder",
+//   });
+//   const settings = { ...DEFAULT_REMINDER_SETTINGS, ...(settingsDoc || {}) };
+//   if (!settings.enabled || !settings.senderEmail) return;
+//   for (let i = 0; i < 10; i += 1) {
+//     const job = await reminderQueueCollection.findOneAndUpdate(
+//       { status: "pending", dueAt: { $lte: new Date() } },
+//       { $set: { status: "sending", startedAt: new Date() } },
+//       { sort: { dueAt: 1 }, returnDocument: "after" },
+//     );
+//     const task = job?.value ?? job;
+//     if (!task) break;
+//     try {
+//       const intern = await internsCollection.findOne({
+//         internId: task.internId,
+//       });
+//       if (!intern) throw new Error("Intern record no longer exists.");
+//       const htmlContent = renderReminderTemplate(settings.html, {
+//         ...intern,
+//         whatsappLink: task.whatsappLink,
+//       });
+//       const payload = {
+//         sender: { email: settings.senderEmail, name: settings.senderName },
+//         to: [{ email: intern.email, name: intern.name }],
+//         subject: settings.subject,
+//         htmlContent,
+//         textContent: `Hello ${intern.name}, please join your VELoop Rewards WhatsApp group: ${task.whatsappLink}`,
+//         ...(settings.replyTo ? { replyTo: { email: settings.replyTo } } : {}),
+//         tags: ["veloop-whatsapp-onboarding-reminder"],
+//       };
+//       const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+//         method: "POST",
+//         headers: {
+//           accept: "application/json",
+//           "api-key": BREVO_API_KEY,
+//           "content-type": "application/json",
+//         },
+//         body: JSON.stringify(payload),
+//       });
+//       const result = await response.json().catch(() => ({}));
+//       if (!response.ok)
+//         throw new Error(result.message || `Brevo returned ${response.status}`);
+//       await reminderQueueCollection.updateOne(
+//         { _id: task._id },
+//         {
+//           $set: {
+//             status: "sent",
+//             sentAt: new Date(),
+//             messageId: result.messageId || null,
+//           },
+//         },
+//       );
+//       await emailEventsCollection.insertOne({
+//         internId: intern.internId,
+//         recipientEmail: intern.email,
+//         recipientName: intern.name,
+//         provider: "brevo-reminder",
+//         status: "sent",
+//         messageId: result.messageId || null,
+//         sentAt: new Date(),
+//       });
+//     } catch (error) {
+//       await reminderQueueCollection.updateOne(
+//         { _id: task._id },
+//         {
+//           $set: {
+//             status: "failed",
+//             failedAt: new Date(),
+//             errorMessage: error.message,
+//           },
+//         },
+//       );
+//       await emailEventsCollection
+//         .insertOne({
+//           internId: task.internId,
+//           recipientEmail: task.recipientEmail || "",
+//           recipientName: "",
+//           provider: "brevo-reminder",
+//           status: "failed",
+//           errorMessage: error.message,
+//           sentAt: new Date(),
+//         })
+//         .catch(() => {});
+//       console.error("WHATSAPP REMINDER FAILED:", error.message);
+//     }
+//   }
+// }
+async function processDueWhatsAppReminders() {
+  if (!reminderQueueCollection || !BREVO_API_KEY) return;
+
+  const settingsDoc = await settingsCollection.findOne({
+    _id: "whatsappReminder",
+  });
+
+  const settings = {
+    ...DEFAULT_REMINDER_SETTINGS,
+    ...(settingsDoc || {}),
+  };
+
+  if (!settings.enabled || !settings.senderEmail) return;
+
+  for (let i = 0; i < 10; i += 1) {
+    const job = await reminderQueueCollection.findOneAndUpdate(
+      {
+        status: "pending",
+        dueAt: { $lte: new Date() },
+      },
+      {
+        $set: {
+          status: "sending",
+          startedAt: new Date(),
+        },
+      },
+      {
+        sort: { dueAt: 1 },
+        returnDocument: "after",
+      },
+    );
+
+    const task = job?.value ?? job;
+
+    if (!task) break;
+
+    try {
+      const intern = await internsCollection.findOne({
+        internId: task.internId,
+        reminderEligible: true,
+      });
+
+      // Old interns and ineligible records must never receive reminders.
+      if (!intern) {
+        await reminderQueueCollection.updateOne(
+          { _id: task._id },
+          {
+            $set: {
+              status: "skipped",
+              skippedAt: new Date(),
+              errorMessage:
+                "Intern is not eligible for new WhatsApp reminders.",
+            },
+          },
+        );
+        continue;
+      }
+
+      const group = await getWhatsAppGroupBySequence(
+        Number(intern.groupSequenceNumber),
+      );
+
+      if (!group || Number(task.groupSequenceNumber) !== group.sequenceNumber) {
+        throw new Error(
+          "The assigned WhatsApp group has expired or is unavailable.",
+        );
+      }
+
+      const htmlContent = renderReminderTemplate(settings.html, {
+        ...intern,
+        whatsappLink: group.whatsappLink,
+      });
+
+      const payload = {
+        sender: {
+          email: settings.senderEmail,
+          name: settings.senderName,
+        },
+        to: [
+          {
+            email: intern.email,
+            name: intern.name,
+          },
+        ],
+        subject: settings.subject,
+        htmlContent,
+        textContent: `Hello ${intern.name}, please join your VELoop Rewards WhatsApp group: ${group.whatsappLink}`,
+        ...(settings.replyTo ? { replyTo: { email: settings.replyTo } } : {}),
+        tags: ["veloop-whatsapp-onboarding-reminder"],
+      };
+
+      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "api-key": BREVO_API_KEY,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result.message || `Brevo returned ${response.status}`);
+      }
+
+      await reminderQueueCollection.updateOne(
+        { _id: task._id },
+        {
+          $set: {
+            status: "sent",
+            sentAt: new Date(),
+            messageId: result.messageId || null,
+          },
+          $unset: {
+            recipientEmail: "",
+            recipientName: "",
+          },
+        },
+      );
+
+      await emailEventsCollection.insertOne({
+        internId: intern.internId,
+        recipientEmail: intern.email,
+        recipientName: intern.name,
+        provider: "brevo-reminder",
+        status: "sent",
+        messageId: result.messageId || null,
+        sentAt: new Date(),
+      });
+
+      console.log(
+        `WHATSAPP REMINDER SENT: ${intern.internId}, group ${group.sequenceNumber}`,
+      );
+    } catch (error) {
+      await reminderQueueCollection.updateOne(
+        { _id: task._id },
+        {
+          $set: {
+            status: "failed",
+            failedAt: new Date(),
+            errorMessage: error.message,
+          },
+        },
+      );
+
+      await emailEventsCollection
+        .insertOne({
+          internId: task.internId,
+          recipientEmail: task.recipientEmail || "",
+          recipientName: task.recipientName || "",
+          provider: "brevo-reminder",
+          status: "failed",
+          errorMessage: error.message,
+          sentAt: new Date(),
+        })
+        .catch(() => {});
+
+      console.error("WHATSAPP REMINDER FAILED:", task.internId, error.message);
+    }
+  }
+}
+
 async function startServer() {
   try {
+    console.log("[STARTUP] Connecting to MongoDB...");
     await connectMongoDB();
+
+    console.log("[STARTUP] MongoDB connected. Starting Intern ID migration...");
+    await migrateInternIdsTo15Characters();
+
+    console.log("[STARTUP] Migration completed. Starting Express server...");
+    // Process due reminders every minute.
+    setInterval(
+      () =>
+        processDueWhatsAppReminders().catch((error) =>
+          console.error("REMINDER WORKER ERROR:", error),
+        ),
+      60 * 1000,
+    );
+
+    // Backup cleanup for expired WhatsApp group links.
+    setInterval(
+      () =>
+        whatsappGroupsCollection
+          .deleteMany({ expiresAt: { $lte: new Date() } })
+          .catch((error) =>
+            console.error("WHATSAPP GROUP CLEANUP ERROR:", error),
+          ),
+      60 * 60 * 1000,
+    );
 
     app.listen(PORT, () => {
       console.log(

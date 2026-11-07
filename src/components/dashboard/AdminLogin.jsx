@@ -34,11 +34,11 @@ export default function AdminLogin({ onLogin, error = "", onBack }) {
   const visibleError = localError || error;
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-12 text-slate-900 selection:bg-orange-200 selection:text-orange-950 sm:px-6">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-12 text-slate-900 selection:bg-blue-200 selection:text-blue-950 sm:px-6">
       {/* Decorative background */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -left-40 -top-40 h-[420px] w-[420px] rounded-full bg-orange-500/15 blur-[100px]"
+        className="pointer-events-none absolute -left-40 -top-40 h-[420px] w-[420px] rounded-full bg-blue-500/15 blur-[100px]"
       />
 
       <div
@@ -59,7 +59,7 @@ export default function AdminLogin({ onLogin, error = "", onBack }) {
       <div className="relative z-10 w-full max-w-[460px]">
         {/* Brand */}
         <div className="mb-7 flex items-center justify-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-orange-400 via-orange-500 to-orange-700 text-2xl font-black text-white shadow-xl shadow-orange-500/25 ring-1 ring-white/15">
+          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 text-2xl font-black text-white shadow-xl shadow-blue-500/25 ring-1 ring-white/15">
             V
           </div>
 
@@ -67,7 +67,7 @@ export default function AdminLogin({ onLogin, error = "", onBack }) {
             <p className="text-xl font-black tracking-[0.15em] text-white">
               VELOOP
             </p>
-            <p className="mt-1 text-[10px] font-bold tracking-[0.32em] text-orange-400">
+            <p className="mt-1 text-[10px] font-bold tracking-[0.32em] text-blue-400">
               REWARDS
             </p>
           </div>
@@ -75,7 +75,7 @@ export default function AdminLogin({ onLogin, error = "", onBack }) {
 
         {/* Login card */}
         <section className="overflow-hidden rounded-[28px] border border-white/10 bg-white shadow-2xl shadow-black/30">
-          <div className="h-1.5 bg-gradient-to-r from-orange-400 via-orange-500 to-amber-400" />
+          <div className="h-1.5 bg-gradient-to-r from-blue-400 via-blue-500 to-amber-400" />
 
           <div className="p-6 sm:p-9">
             {/* Security badge */}
@@ -109,7 +109,7 @@ export default function AdminLogin({ onLogin, error = "", onBack }) {
                 </label>
 
                 <div className="group relative">
-                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 transition group-focus-within:text-orange-500">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 transition group-focus-within:text-blue-500">
                     <svg
                       aria-hidden="true"
                       viewBox="0 0 24 24"
@@ -138,7 +138,7 @@ export default function AdminLogin({ onLogin, error = "", onBack }) {
                     required
                     autoFocus
                     disabled={isSubmitting}
-                    className="h-13 w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-16 text-sm font-medium text-slate-900 outline-none transition placeholder:font-normal placeholder:text-slate-400 hover:border-slate-300 focus:border-orange-400 focus:bg-white focus:ring-4 focus:ring-orange-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="h-13 w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-16 text-sm font-medium text-slate-900 outline-none transition placeholder:font-normal placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60"
                   />
 
                   <button
@@ -149,7 +149,7 @@ export default function AdminLogin({ onLogin, error = "", onBack }) {
                     }
                     aria-pressed={showPassword}
                     disabled={isSubmitting}
-                    className="absolute inset-y-0 right-0 flex items-center px-4 text-xs font-bold text-slate-500 transition hover:text-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400 disabled:opacity-50"
+                    className="absolute inset-y-0 right-0 flex items-center px-4 text-xs font-bold text-slate-500 transition hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 disabled:opacity-50"
                   >
                     {showPassword ? "Hide" : "Show"}
                   </button>
@@ -175,7 +175,7 @@ export default function AdminLogin({ onLogin, error = "", onBack }) {
               <button
                 type="submit"
                 disabled={isSubmitting || !password.trim()}
-                className="group flex min-h-13 w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-orange-500 to-orange-600 px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-orange-500/20 transition duration-200 hover:-translate-y-0.5 hover:from-orange-600 hover:to-orange-700 hover:shadow-xl hover:shadow-orange-500/25 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-500/30 disabled:translate-y-0 disabled:cursor-not-allowed disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none"
+                className="group flex min-h-13 w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-blue-500 to-blue-600 px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-blue-500/20 transition duration-200 hover:-translate-y-0.5 hover:from-blue-600 hover:to-blue-700 hover:shadow-xl hover:shadow-blue-500/25 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/30 disabled:translate-y-0 disabled:cursor-not-allowed disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none"
               >
                 {isSubmitting ? (
                   <>
@@ -243,7 +243,7 @@ export default function AdminLogin({ onLogin, error = "", onBack }) {
                 type="button"
                 onClick={onBack}
                 disabled={isSubmitting}
-                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span aria-hidden="true">←</span>
                 Back to offer generator

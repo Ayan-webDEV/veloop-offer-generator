@@ -4,6 +4,8 @@ import OverviewDashboard from "./OverviewDashboard.jsx";
 import InternsDashboard from "./InternsDashboard.jsx";
 import EmailHistoryDashboard from "./EmailHistoryDashboard.jsx";
 import AnalyticsDashboard from "./AnalyticsDashboard.jsx";
+import AutomationSettings from "./AutomationSettings.jsx";
+import EmailUsagePanel from "./EmailUsagePanel.jsx";
 
 import { getDashboardStats } from "../../services/dashboardService.js";
 
@@ -31,6 +33,12 @@ const NAVIGATION = [
     label: "Analytics",
     icon: "▥",
     description: "Hiring trends and performance",
+  },
+  {
+    id: "settings",
+    label: "Email & Settings",
+    icon: "✉",
+    description: "Email channels, reminders and ID sequence",
   },
 ];
 
@@ -209,7 +217,7 @@ export default function DashboardLayout({
         {/* Brand */}
         <div className="flex h-[76px] shrink-0 items-center justify-between border-b border-slate-100 px-5">
           <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-orange-400 via-orange-500 to-orange-700 text-xl font-black text-white shadow-lg shadow-orange-500/20">
+            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 text-xl font-black text-white shadow-lg shadow-blue-500/20">
               V
             </div>
 
@@ -217,7 +225,7 @@ export default function DashboardLayout({
               <p className="text-lg font-black tracking-[0.14em] text-slate-900">
                 VELOOP
               </p>
-              <p className="mt-1 text-[10px] font-bold tracking-[0.28em] text-orange-600">
+              <p className="mt-1 text-[10px] font-bold tracking-[0.28em] text-blue-600">
                 REWARDS
               </p>
             </div>
@@ -255,14 +263,14 @@ export default function DashboardLayout({
                     "rounded-2xl px-3 py-2.5 text-left",
                     "transition-all duration-200",
                     isActive
-                      ? "bg-orange-50 text-orange-700 shadow-sm ring-1 ring-orange-100"
+                      ? "bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100"
                       : "text-slate-500 hover:bg-slate-50 hover:text-slate-900",
                   ].join(" ")}
                 >
                   {isActive && (
                     <span
                       aria-hidden="true"
-                      className="absolute bottom-2.5 left-0 top-2.5 w-[3px] rounded-r-full bg-orange-500"
+                      className="absolute bottom-2.5 left-0 top-2.5 w-[3px] rounded-r-full bg-blue-500"
                     />
                   )}
 
@@ -275,7 +283,7 @@ export default function DashboardLayout({
                     <span
                       className={[
                         "mt-0.5 block truncate text-[11px]",
-                        isActive ? "text-orange-600/80" : "text-slate-400",
+                        isActive ? "text-blue-600/80" : "text-slate-400",
                       ].join(" ")}
                     >
                       {item.description}
@@ -285,7 +293,7 @@ export default function DashboardLayout({
                   {isActive && (
                     <span
                       aria-hidden="true"
-                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500"
+                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500"
                     />
                   )}
                 </button>
@@ -319,7 +327,7 @@ export default function DashboardLayout({
           <button
             type="button"
             onClick={handleBackToOffers}
-            className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3.5 py-3 text-left text-sm font-semibold text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+            className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3.5 py-3 text-left text-sm font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
           >
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-slate-100 text-base">
               ↗
@@ -340,7 +348,7 @@ export default function DashboardLayout({
             <span>{loggingOut ? "Signing out…" : "Sign out"}</span>
 
             {loggingOut && (
-              <span className="ml-auto h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-orange-500" />
+              <span className="ml-auto h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
             )}
           </button>
         </div>
@@ -362,7 +370,7 @@ export default function DashboardLayout({
               aria-expanded={sidebarOpen}
               aria-controls="admin-dashboard-sidebar"
               disabled={sidebarOpen}
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-lg text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 disabled:opacity-50 lg:hidden"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-lg text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 lg:hidden"
             >
               ☰
             </button>
@@ -412,9 +420,9 @@ export default function DashboardLayout({
             {/* Page heading */}
             <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
               <div className="min-w-0">
-                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-100 bg-orange-50 px-3 py-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-                  <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-orange-700">
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-blue-700">
                     VELOOP Rewards · Administration
                   </p>
                 </div>
@@ -429,7 +437,7 @@ export default function DashboardLayout({
               </div>
 
               <div className="inline-flex w-fit shrink-0 items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm shadow-slate-900/[0.02]">
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-orange-50 text-lg text-orange-600">
+                <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-50 text-lg text-blue-600">
                   ◷
                 </span>
 
@@ -446,6 +454,8 @@ export default function DashboardLayout({
 
             {/* Overview */}
             {activePage === "overview" && (
+              <>
+              <div className="mb-6"><EmailUsagePanel /></div>
               <OverviewDashboard
                 stats={dashboardStats}
                 dailyTrend={dailyTrend}
@@ -454,6 +464,7 @@ export default function DashboardLayout({
                 onRetry={loadDashboardStats}
                 onViewAll={() => navigateTo("email-history")}
               />
+              </>
             )}
 
             {/* Intern records */}
@@ -464,11 +475,9 @@ export default function DashboardLayout({
 
             {/* Analytics */}
             {activePage === "analytics" && (
-              <AnalyticsDashboard
-                stats={dashboardStats}
-                dailyTrend={dailyTrend}
-              />
+              <AnalyticsDashboard stats={dashboardStats} dailyTrend={dailyTrend} />
             )}
+            {activePage === "settings" && <AutomationSettings />}
           </section>
 
           {/* Footer */}

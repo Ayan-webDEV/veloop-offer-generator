@@ -4,6 +4,8 @@ import {
   getInternDetails,
   getInterns,
 } from "../../services/dashboardService.js";
+import { apiDelete, apiPatch } from "../../services/api.js";
+import { buildPdf, downloadPdf } from "../../utils/pdf.js";
 
 const PAGE_SIZE = 10;
 
@@ -196,11 +198,14 @@ function SectionHeading({ children, count }) {
   );
 }
 
-function InternDetailsModal({ internId, onClose }) {
+function InternDetailsModal({ internId, onClose, onDeleted }) {
   const [intern, setIntern] = useState(null);
   const [emailHistory, setEmailHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editForm, setEditForm] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -214,7 +219,9 @@ function InternDetailsModal({ internId, onClose }) {
 
         if (cancelled) return;
 
-        setIntern(response?.intern ?? response?.data?.intern ?? null);
+        const loadedIntern = response?.intern ?? response?.data?.intern ?? null;
+        setIntern(loadedIntern);
+        if (loadedIntern) setEditForm({ name: loadedIntern.name || "", email: loadedIntern.email || "", domain: loadedIntern.domain || "", startDate: loadedIntern.startDate || "", duration: loadedIntern.duration || "", mode: loadedIntern.mode || "", stipend: loadedIntern.stipend || "" });
         setEmailHistory(
           Array.isArray(response?.emailHistory)
             ? response.emailHistory
@@ -247,6 +254,24 @@ function InternDetailsModal({ internId, onClose }) {
     return () => window.removeEventListener("keydown", handleEscape);
   }, [onClose]);
 
+  async function saveInternChanges() {
+    setSaving(true); setError("");
+    try {
+      await apiPatch(`/api/interns/${encodeURIComponent(internId)}`, editForm);
+      setIntern((old) => ({ ...old, ...editForm }));
+      setEditing(false);
+    } catch (err) { setError(err.message || "Could not update intern."); }
+    finally { setSaving(false); }
+  }
+
+  async function deleteIntern() {
+    if (!window.confirm(`Delete ${intern?.name || internId}? This cannot be undone.`)) return;
+    setSaving(true);
+    try { await apiDelete(`/api/interns/${encodeURIComponent(internId)}`); onDeleted?.(); onClose(); }
+    catch (err) { setError(err.message || "Could not delete intern."); }
+    finally { setSaving(false); }
+  }
+
   const name = getInternName(intern || {});
   const email = getInternEmail(intern || {});
   const status = getOfferStatus(intern || {});
@@ -265,9 +290,9 @@ function InternDetailsModal({ internId, onClose }) {
         aria-modal="true"
         aria-labelledby="intern-detail-title"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-orange-50 via-white to-white px-5 py-5 sm:px-7">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-blue-50 via-white to-white px-5 py-5 sm:px-7">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-orange-700">
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-700">
               Intern record
             </p>
             <h2
@@ -283,7 +308,7 @@ function InternDetailsModal({ internId, onClose }) {
 
           <button
             type="button"
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-xl text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100"
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-xl text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
             onClick={onClose}
             aria-label="Close intern details"
           >
@@ -297,7 +322,7 @@ function InternDetailsModal({ internId, onClose }) {
               className="flex min-h-64 flex-col items-center justify-center text-center"
               role="status"
             >
-              <span className="size-9 animate-spin rounded-full border-[3px] border-orange-100 border-t-orange-600" />
+              <span className="size-9 animate-spin rounded-full border-[3px] border-blue-100 border-t-blue-600" />
               <p className="mt-4 text-sm font-semibold text-slate-800">
                 Loading intern details…
               </p>
@@ -326,7 +351,7 @@ function InternDetailsModal({ internId, onClose }) {
             <div className="space-y-7">
               <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
                 <div className="flex flex-wrap items-center gap-4">
-                  <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-100 to-amber-50 text-xl font-bold text-orange-700 ring-1 ring-inset ring-orange-200">
+                  <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-amber-50 text-xl font-bold text-blue-700 ring-1 ring-inset ring-blue-200">
                     {name.charAt(0).toUpperCase()}
                   </div>
 
@@ -408,6 +433,14 @@ function InternDetailsModal({ internId, onClose }) {
                 </dl>
               </section>
 
+              <section className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4 sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div><h3 className="text-sm font-bold text-slate-900">Manage intern record</h3><p className="mt-1 text-xs text-slate-500">Edit profile information or permanently delete this intern.</p></div>
+                  <div className="flex gap-2"><button type="button" onClick={() => setEditing((v) => !v)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700">{editing ? "Cancel edit" : "Edit details"}</button><button type="button" disabled={saving} onClick={deleteIntern} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 disabled:opacity-50">Delete intern</button></div>
+                </div>
+                {editing && <div className="mt-4 grid gap-3 sm:grid-cols-2">{[["name","Full name"],["email","Email address"],["domain","Domain"],["startDate","Start date"],["duration","Duration"],["mode","Mode"],["stipend","Stipend"]].map(([key,label]) => <label key={key} className="text-xs font-semibold text-slate-600">{label}<input className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400" value={editForm[key] || ""} onChange={(e) => setEditForm((old) => ({ ...old, [key]: e.target.value }))} /></label>)}<div className="sm:col-span-2"><button type="button" onClick={saveInternChanges} disabled={saving} className="rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">{saving ? "Saving…" : "Save intern changes"}</button></div></div>}
+              </section>
+
               <section>
                 <SectionHeading count={emailHistory.length}>
                   Email history
@@ -487,7 +520,7 @@ function InternDetailsModal({ internId, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100"
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
           >
             Close details
           </button>
@@ -545,6 +578,7 @@ function InternsDashboard() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [selectedInternId, setSelectedInternId] = useState("");
+  const [downloadingInternId, setDownloadingInternId] = useState("");
 
   const loadInterns = useCallback(async () => {
     setLoading(true);
@@ -595,6 +629,25 @@ function InternsDashboard() {
     setPage(1);
   }
 
+  async function downloadInternOffer(intern) {
+    const internId = getInternId(intern);
+    if (!internId || downloadingInternId) return;
+    setDownloadingInternId(internId); setError(""); setNotice("");
+    try {
+      const detail = await getInternDetails(internId);
+      const record = detail?.intern ?? detail?.data?.intern ?? intern;
+      const pdfBytes = await buildPdf({
+        name: record.name || "", position: record.domain || "", internId: record.internId || internId,
+        issueDate: String(record.issueDate || record.offerCreatedAt || new Date().toISOString().slice(0,10)).slice(0,10),
+        startDate: String(record.startDate || "").slice(0,10), duration: record.duration || "1 Month",
+        mode: record.mode || "Remote", stipend: record.stipend || "Performance Based — Up to ₹6,000",
+      });
+      downloadPdf(pdfBytes, `${record.internId || internId}-Offer-Letter.pdf`);
+      setNotice(`Offer letter downloaded for ${record.name || internId}.`);
+    } catch (err) { setError(err.message || "Could not generate the offer letter PDF."); }
+    finally { setDownloadingInternId(""); }
+  }
+
   async function handleExport() {
     if (exporting) return;
 
@@ -632,10 +685,19 @@ function InternsDashboard() {
 
   return (
     <div className="mx-auto w-full max-w-[1600px] space-y-6">
+      {downloadingInternId && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="status" aria-live="polite">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-7 text-center shadow-2xl">
+            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
+            <h3 className="text-lg font-black text-slate-950">Generating offer letter</h3>
+            <p className="mt-2 text-sm text-slate-500">Preparing the original PDF for {downloadingInternId}. Nothing is stored on the server.</p>
+          </div>
+        </div>
+      )}
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-orange-100 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
-            <span className="size-1.5 rounded-full bg-orange-500" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+            <span className="size-1.5 rounded-full bg-blue-500" />
             Internship management
           </div>
 
@@ -651,7 +713,7 @@ function InternsDashboard() {
 
         <button
           type="button"
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
           onClick={handleExport}
           disabled={exporting || loading}
         >
@@ -680,7 +742,7 @@ function InternsDashboard() {
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
               <FilterIcon />
             </div>
             <div>
@@ -695,7 +757,7 @@ function InternsDashboard() {
 
           <button
             type="button"
-            className="inline-flex min-h-9 items-center justify-center rounded-lg px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100"
+            className="inline-flex min-h-9 items-center justify-center rounded-lg px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
             onClick={clearFilters}
           >
             Clear all
@@ -721,7 +783,7 @@ function InternsDashboard() {
                 value={filters.search}
                 onChange={(event) => updateFilter("search", event.target.value)}
                 placeholder="Name, email, or intern ID"
-                className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
               />
             </div>
           </div>
@@ -737,7 +799,7 @@ function InternsDashboard() {
               id="intern-domain"
               value={filters.domain}
               onChange={(event) => updateFilter("domain", event.target.value)}
-              className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+              className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
             >
               <option value="">All domains</option>
               {DOMAIN_OPTIONS.map((domain) => (
@@ -759,7 +821,7 @@ function InternsDashboard() {
               id="intern-duration"
               value={filters.duration}
               onChange={(event) => updateFilter("duration", event.target.value)}
-              className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+              className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
             >
               <option value="">All durations</option>
               {DURATION_OPTIONS.map((duration) => (
@@ -781,7 +843,7 @@ function InternsDashboard() {
               id="intern-mode"
               value={filters.mode}
               onChange={(event) => updateFilter("mode", event.target.value)}
-              className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+              className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
             >
               <option value="">All modes</option>
               {MODE_OPTIONS.map((mode) => (
@@ -803,7 +865,7 @@ function InternsDashboard() {
               id="intern-status"
               value={filters.status}
               onChange={(event) => updateFilter("status", event.target.value)}
-              className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+              className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
             >
               <option value="">All statuses</option>
               {STATUS_OPTIONS.map((status) => (
@@ -891,11 +953,11 @@ function InternsDashboard() {
 
         {loading && (
           <div
-            className="h-1 overflow-hidden bg-orange-50"
+            className="h-1 overflow-hidden bg-blue-50"
             role="status"
             aria-label="Loading intern records"
           >
-            <div className="h-full w-1/3 animate-pulse rounded-full bg-orange-500" />
+            <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-500" />
           </div>
         )}
 
@@ -928,7 +990,7 @@ function InternsDashboard() {
                 <tr>
                   <td colSpan={7} className="px-5 py-14">
                     <div className="flex items-center justify-center gap-3 text-sm text-slate-500">
-                      <span className="size-5 animate-spin rounded-full border-2 border-orange-200 border-t-orange-600" />
+                      <span className="size-5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
                       Loading intern records…
                     </div>
                   </td>
@@ -950,7 +1012,7 @@ function InternsDashboard() {
                       <button
                         type="button"
                         onClick={clearFilters}
-                        className="mt-4 rounded-lg px-3 py-2 text-sm font-semibold text-orange-700 transition hover:bg-orange-50"
+                        className="mt-4 rounded-lg px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
                       >
                         Clear filters
                       </button>
@@ -974,11 +1036,11 @@ function InternsDashboard() {
                   return (
                     <tr
                       key={intern._id ?? internId ?? index}
-                      className="transition-colors hover:bg-orange-50/30"
+                      className="transition-colors hover:bg-blue-50/30"
                     >
                       <td className="px-5 py-4">
                         <div className="flex min-w-0 items-center gap-3">
-                          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-100 to-amber-50 text-sm font-bold text-orange-700 ring-1 ring-inset ring-orange-200/70">
+                          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-100 to-amber-50 text-sm font-bold text-blue-700 ring-1 ring-inset ring-blue-200/70">
                             {initials}
                           </div>
                           <div className="min-w-0">
@@ -1017,9 +1079,10 @@ function InternsDashboard() {
                       </td>
 
                       <td className="px-5 py-4">
+                        <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          className="inline-flex min-h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex min-h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
                           onClick={() => setSelectedInternId(String(internId))}
                           disabled={!internId}
                         >
@@ -1037,6 +1100,8 @@ function InternsDashboard() {
                             />
                           </svg>
                         </button>
+                        <button type="button" disabled={!internId || downloadingInternId === internId} onClick={() => downloadInternOffer(intern)} className="inline-flex min-h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-50">{downloadingInternId === internId ? "Generating…" : "Download offer"}</button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1058,7 +1123,7 @@ function InternsDashboard() {
               type="button"
               onClick={() => setPage((current) => Math.max(1, current - 1))}
               disabled={loading || page <= 1}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <span aria-hidden="true">←</span>
               Previous
@@ -1070,7 +1135,7 @@ function InternsDashboard() {
                 setPage((current) => Math.min(totalPages, current + 1))
               }
               disabled={loading || page >= totalPages}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
               <span aria-hidden="true">→</span>
@@ -1083,6 +1148,7 @@ function InternsDashboard() {
         <InternDetailsModal
           internId={selectedInternId}
           onClose={() => setSelectedInternId("")}
+          onDeleted={loadInterns}
         />
       )}
     </div>

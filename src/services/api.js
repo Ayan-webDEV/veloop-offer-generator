@@ -223,6 +223,10 @@ export function apiPost(path, body, options = {}) {
   });
 }
 
+export function apiPut(path, body, options = {}) {
+  return apiRequest(path, { ...options, method: "PUT", body });
+}
+
 export function apiPatch(path, body, options = {}) {
   return apiRequest(path, {
     ...options,

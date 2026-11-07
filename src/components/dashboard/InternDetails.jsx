@@ -112,9 +112,9 @@ function InternDetails({
         .filter(Boolean)
         .join(" ")}
     >
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-linear-to-r from-orange-50/80 via-white to-white px-5 py-5 sm:px-6">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-linear-to-r from-blue-50/80 via-white to-white px-5 py-5 sm:px-6">
         <div className="flex min-w-0 items-center gap-3.5">
-          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-orange-100 text-base font-bold text-orange-700 ring-1 ring-inset ring-orange-200">
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-blue-100 text-base font-bold text-blue-700 ring-1 ring-inset ring-blue-200">
             {initials}
           </div>
 
@@ -129,7 +129,7 @@ function InternDetails({
               <p className="mt-1 break-all text-sm text-slate-500">{email}</p>
             )}
             {intern?.internId && (
-              <p className="mt-1 font-mono text-xs text-orange-700">
+              <p className="mt-1 font-mono text-xs text-blue-700">
                 {intern.internId}
               </p>
             )}
@@ -141,7 +141,7 @@ function InternDetails({
             type="button"
             onClick={onClose}
             aria-label="Close intern details"
-            className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100"
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
           >
             <svg
               viewBox="0 0 20 20"
@@ -171,7 +171,7 @@ function InternDetails({
 
         {loading && !intern ? (
           <div className="flex items-center gap-3 py-8 text-sm text-slate-500">
-            <span className="size-5 animate-spin rounded-full border-2 border-orange-200 border-t-orange-600" />
+            <span className="size-5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
             Retrieving intern information…
           </div>
         ) : intern ? (

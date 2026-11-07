@@ -50,7 +50,7 @@ function Pagination({
   const pages = getPageNumbers(safePage, pagesCount);
 
   const buttonBase =
-    "inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-sm font-medium transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-40";
+    "inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-sm font-medium transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-40";
 
   function changePage(nextPage) {
     if (
@@ -133,7 +133,7 @@ function Pagination({
               className={[
                 buttonBase,
                 item === safePage
-                  ? "bg-orange-600 text-white shadow-sm hover:bg-orange-700"
+                  ? "bg-blue-600 text-white shadow-sm hover:bg-blue-700"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
               ].join(" ")}
             >

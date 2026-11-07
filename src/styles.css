@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+@theme {
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-canvas: #f8fafc;
+  --color-line: #e2e8f0;
+  --color-ink-500: #64748b;
+  --color-ink-700: #334155;
+  --color-ink-800: #1e293b;
+  --color-ink-900: #0f172a;
+  --color-ink-950: #020617;
+  --shadow-card: 0 12px 32px rgba(15, 23, 42, 0.06);
+}
+
 :root {
   font-family:
     Inter,
@@ -10,7 +26,7 @@
     "Segoe UI",
     sans-serif;
   color: #101010;
-  background: #eef1f5;
+  background: #f8fafc;
   font-synthesis: none;
 }
 
@@ -56,7 +72,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 3px solid #f16b05;
+  border-bottom: 3px solid #2563eb;
 }
 .brand {
   font-size: 20px;
@@ -64,7 +80,7 @@ button {
   letter-spacing: 0.5px;
 }
 .brand span {
-  color: #f16b05;
+  color: #2563eb;
 }
 .topbar p {
   margin: 3px 0 0;
@@ -143,7 +159,7 @@ button {
 }
 .field input:focus,
 .field select:focus {
-  border-color: #f16b05;
+  border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(241, 107, 5, 0.1);
 }
 .id-row {
@@ -208,7 +224,7 @@ button {
   color: #20242a;
 }
 .primary {
-  background: #f16b05;
+  background: #2563eb;
   color: white;
 }
 .actions button:disabled {
@@ -272,7 +288,7 @@ button {
   place-items: center;
   border-radius: 12px;
   background: #fff1e8;
-  color: #f16b05;
+  color: #2563eb;
   font-size: 13px;
   font-weight: 900;
 }
@@ -2872,7 +2888,7 @@ textarea:focus-visible {
   height: 24px;
   flex: 0 0 auto;
   border: 3px solid rgba(241, 107, 5, 0.18);
-  border-top-color: #f16b05;
+  border-top-color: #2563eb;
   border-radius: 50%;
   animation: veloop-spin 0.75s linear infinite;
 }
@@ -3076,7 +3092,7 @@ textarea:focus-visible {
   border: 1px solid var(--border-color, #e4e7ec);
   border-radius: 18px;
   background: var(--surface-color, #fff);
-  color: #f16b05;
+  color: #2563eb;
   font-size: 18px;
   font-weight: 800;
 }
@@ -3187,7 +3203,7 @@ textarea:focus-visible {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #f16b05;
+  background: #2563eb;
 }
 
 .monthly-email-chart__legend-dot--failed {
@@ -3222,7 +3238,7 @@ textarea:focus-visible {
 .monthly-email-chart__bar {
   min-width: 0;
   min-height: 14px;
-  background: #f16b05;
+  background: #2563eb;
 }
 
 .monthly-email-chart__bar--failed {
@@ -3295,7 +3311,7 @@ textarea:focus-visible {
 }
 
 .interns-apply-button {
-  background: #f16b05;
+  background: #2563eb;
   color: #fff;
 }
 
@@ -3446,7 +3462,7 @@ textarea:focus-visible {
 
 .interns-pagination button[aria-current="page"],
 .email-history-pagination button[aria-current="page"] {
-  border-color: #f16b05;
+  border-color: #2563eb;
   background: #fff3e8;
   color: #b54708;
   font-weight: 750;

@@ -44,7 +44,7 @@ function EmailBodyPreview({ name = "", whatsappLink = "" }) {
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-700">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
             <svg
               viewBox="0 0 24 24"
               fill="none"
@@ -77,7 +77,7 @@ function EmailBodyPreview({ name = "", whatsappLink = "" }) {
       <div className="p-4 sm:p-6">
         <div className="mx-auto max-w-2xl overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-100 bg-slate-50 px-5 py-4 sm:px-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-orange-700">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">
               VELoop Rewards
             </p>
             <p className="mt-1 text-sm text-slate-500">
@@ -152,7 +152,7 @@ function EmailBodyPreview({ name = "", whatsappLink = "" }) {
               <p className="font-medium text-slate-800">Best regards,</p>
               <p className="mt-1 font-semibold text-slate-900">Ayan Alam</p>
               <p className="text-slate-500">Chief Executive Officer</p>
-              <p className="font-medium text-orange-700">VELoop Rewards</p>
+              <p className="font-medium text-blue-700">VELoop Rewards</p>
             </div>
           </div>
 
