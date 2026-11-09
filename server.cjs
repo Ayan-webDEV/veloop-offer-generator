@@ -1303,18 +1303,34 @@ async function connectMongoDB() {
 
 const WHATSAPP_GROUP_TTL_MS = 48 * 60 * 60 * 1000;
 
+
 function normalizeWhatsAppLink(value) {
   const link = String(value || "").trim();
 
-  if (!/^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_-]+\/?$/i.test(link)) {
+  try {
+    const url = new URL(link);
+
+    // Accept only secure WhatsApp group invitation URLs.
+    if (
+      url.protocol !== "https:" ||
+      url.hostname.toLowerCase() !== "chat.whatsapp.com" ||
+      url.username ||
+      url.password ||
+      !/^\/[A-Za-z0-9_-]+\/?$/.test(url.pathname)
+    ) {
+      throw new Error("Invalid WhatsApp group link.");
+    }
+
+    // Keep the complete invitation URL, including query parameters.
+    return link;
+  } catch {
     throw Object.assign(
       new Error("Please provide a valid WhatsApp group invitation link."),
-      { statusCode: 400 },
+      { statusCode: 400 }
     );
   }
-
-  return link.replace(/\/+$/, "");
 }
+
 
 async function getOrCreateWhatsAppGroup(rawLink) {
   const whatsappLink = normalizeWhatsAppLink(rawLink);
